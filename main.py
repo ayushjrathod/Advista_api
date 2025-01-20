@@ -222,11 +222,11 @@ async def render_page():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Simple Page</title>
+        <title>Advista</title>
     </head>
     <body>
-        <h1>Welcome to the Simple Page</h1>
-        <p>This is a simple HTML page rendered by FastAPI.</p>
+        <h1>The API is running</h1>
+    
     </body>
     </html>
     """
