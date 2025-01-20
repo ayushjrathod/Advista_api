@@ -60,15 +60,16 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_5AB01C6F0D494607B02DE94546344BD7 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_8CE3670B7CD04093BD2C8D9B83E27A7B }}
 
+      - name: Set up `uvicorn` to run with FastAPI
+        run: |
+          # Create a startup script and set execute permission
+          echo "#!/bin/bash" > ./startup.sh
+          echo "uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4" >> ./startup.sh
+          chmod +x ./startup.sh
+
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
           app-name: 'python-api2'
           slot-name: 'Production'
-          
-      - name: Set up `uvicorn` to run with FastAPI
-        run: |
-          echo "#!/bin/bash" > /home/site/wwwroot/startup.sh
-          echo "uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4" >> /home/site/wwwroot/startup.sh
-          chmod +x /home/site/wwwroot/startup.sh
