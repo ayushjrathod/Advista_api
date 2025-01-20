@@ -225,7 +225,7 @@ async def render_page():
         <title>Advista</title>
     </head>
     <body>
-        <h1>The API is running</h1>
+        <h1>The API is running..</h1>
     
     </body>
     </html>
