@@ -1,18 +1,20 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Dict, Optional
 import asyncio
-from datetime import datetime
 import json
 import logging
-from groq import Groq,AsyncGroq
 import os
-from scripts import search_youtube_videos,refine_ad_requirements,get_chat_response
-from video_processor import VideoProcessor
+from datetime import datetime
+from typing import Dict, List, Optional
+
 import aiofiles
 from db import AstraDB
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, StreamingResponse
+from groq import AsyncGroq, Groq
+from pydantic import BaseModel
+from scripts import (get_chat_response, refine_ad_requirements,
+                     search_youtube_videos)
+from video_processor import VideoProcessor
 
 app = FastAPI()
 
@@ -212,6 +214,28 @@ async def stream_reddit_analysis(session_id: str):
     except Exception as e:
         logger.error(f"Error streaming Reddit analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/render-page", response_class=HTMLResponse)
+async def render_page():
+    """Render a simple HTML page"""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Simple Page</title>
+    </head>
+    <body>
+        <h1>Welcome to the Simple Page</h1>
+        <p>This is a simple HTML page rendered by FastAPI.</p>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn
