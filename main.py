@@ -19,7 +19,7 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://delightful-moss-08d713800.4.azurestaticapps.net/","http://delightful-moss-08d713800.4.azurestaticapps.net/"],
+    allow_origins=["https://delightful-moss-08d713800.4.azurestaticapps.net/","http://delightful-moss-08d713800.4.azurestaticapps.net/","http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
