@@ -12,7 +12,8 @@ from reddit_insights_server import (
     fetch_search_results,
     fetch_reddit_comments,
     is_valid_body,
-    process_reddit_data  # Update import
+    process_reddit_data,  # Update import
+    send_data_to_api  # Add this import
 )
 
 # Fix logger initialization
@@ -99,7 +100,12 @@ class AstraDB:
                 "query_embedding": query_embedding,
                 "timestamp": datetime.now().isoformat(),
                 "processed": False,
-                "reddit_groq_insight": reddit_groq_insight  # Add Groq insight
+                "reddit_groq_insight": reddit_groq_insight,  # Add Groq insight
+                "youtube_groq_analysis": None,  # Add field for YouTube analysis
+                "analyses": {              # Combined analyses object
+                    "youtube": None,
+                    "reddit": reddit_groq_insight  # Already stored in same object
+                }
             }
 
             # Save to searches collection
@@ -180,6 +186,13 @@ class AstraDB:
                     {"$set": update_doc}
                 )
             )
+
+            if transcript:
+                # Get analysis immediately
+                analysis = await self.analyze_transcript(search_id, transcript)
+                if analysis:
+                    # Update analyses directly in searches collection
+                    await self.update_search_analyses(search_id, youtube_analysis=analysis)
             return result
             
         except Exception as e:
@@ -225,6 +238,7 @@ class AstraDB:
                 "reddit_insights": reddit_insights,
                 "reddit_comments": reddit_comments,
                 "reddit_groq_insight": search.get("reddit_groq_insight"),  # Changed field name
+                "youtube_transcript_analysis": search.get("youtube_transcript_analysis"),
                 "timestamp": search["timestamp"],
                 "processed": search.get("processed", False),
                 "reddit_processed": search.get("reddit_processed", False)  # Add this field
@@ -273,34 +287,21 @@ class AstraDB:
             return None
 
     async def save_reddit_data(self, search_id: str, product_query: str):
-        """Save Reddit insights and comments with unique IDs"""
+        """Save Reddit groq insight"""
         try:
-            # Get Reddit insights directly
             groq_analysis = process_reddit_data(product_query)
-            if not groq_analysis:
-                return
-            
-            loop = asyncio.get_event_loop()
-            
-            # Update searches collection with Reddit insights using search_id
-            await loop.run_in_executor(
-                None,
-                lambda: self.searches.find_one_and_update(
-                    {"_id": search_id},  # Use _id for finding the document
-                    {"$set": {
-                        "reddit_groq_insight": groq_analysis,
-                        "reddit_processed": True
-                    }}
+            if groq_analysis:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.searches.find_one_and_update(
+                        {"_id": search_id},
+                        {"$set": {"reddit_groq_insight": groq_analysis}}
+                    )
                 )
-            )
-            
-            # Log the analysis using search_id instead of session_id
-            logger.info(f"Reddit Groq Analysis for {search_id}: {groq_analysis}")
-            
             return groq_analysis
-            
         except Exception as e:
-            logger.error(f"Error saving Reddit data: {str(e)}")
+            logger.error(f"Error saving Reddit data: {e}")
             raise
 
     async def get_reddit_analysis_stream(self, query: str) -> str:
@@ -316,6 +317,75 @@ class AstraDB:
         except Exception as e:
             logger.error(f"Error getting Reddit analysis stream: {e}")
             return None
+
+    async def update_youtube_analysis(self, search_id: str, analysis: str):
+        """Update YouTube analysis in searches collection"""
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self.searches.find_one_and_update(
+                    {"_id": search_id},
+                    {"$set": {
+                        "youtube_transcript_analysis": analysis,
+                    }}
+                )
+            )
+        except Exception as e:
+            logger.error(f"Error updating YouTube analysis: {e}")
+            raise
+
+    async def analyze_transcript(self, search_id: str, transcript: str) -> str:
+        """Simplified analysis for YouTube transcript using Groq."""
+        try:
+            from groq import Groq
+            client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+
+            prompt = (
+                f"Give me a concise summary and analysis for this ad setup.\n"
+                f"Session ID: {search_id}\n"
+                f"Transcript:\n{transcript}\n"
+                "I want to run an ad."
+            )
+
+            # Create a non-streaming completion for simplicity
+            response = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.5,
+                max_completion_tokens=512
+            )
+
+            analysis = response.choices[0].message.content
+            logger.info(f"Groq analysis for {search_id}: {analysis}")
+            return analysis
+        except Exception as e:
+            logger.error(f"Error analyzing transcript: {e}")
+            return None
+
+    async def update_search_analyses(self, search_id: str, youtube_analysis: Optional[str] = None):
+        """Update analyses in the searches collection."""
+        try:
+            update_fields = {}
+            if youtube_analysis:
+                update_fields["youtube_groq_analysis"] = youtube_analysis
+
+            if update_fields:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.searches.find_one_and_update(
+                        {"_id": search_id},
+                        {"$set": update_fields}
+                    )
+                )
+                logger.info(f"Updated analyses for search {search_id}")
+        except Exception as e:
+            logger.error(f"Error updating search analyses: {e}")
+            raise
 
     def __del__(self):
         # No need to explicitly close with Document API

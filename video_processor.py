@@ -51,6 +51,20 @@ class VideoProcessor:
 
             # Extract text using async transcription
             transcript = await self.transcriber.transcribe(audio_path)
+            if transcript:
+                logger.info(f"Generated transcript for video {video_id}")
+                
+                # Get analysis from transcript
+                analysis = await self.db.analyze_transcript(session_id, transcript)
+                if analysis:
+                    logger.info(f"Generated analysis for video {video_id}")
+                    # Update the analyses in the search document
+                    await self.db.update_search_analyses(
+                        session_id,
+                        youtube_analysis=analysis
+                    )
+                    video['transcript_analysis'] = analysis
+
             if not transcript:
                 logger.error(f"Failed to transcribe video {video_id}")
                 return None

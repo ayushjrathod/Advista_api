@@ -11,8 +11,11 @@ from nltk import word_tokenize, pos_tag
 from wordcloud import WordCloud
 from collections import Counter
 import os
+import logging
+
 # Create FastAPI application
 app = FastAPI()
+logger = logging.getLogger(__name__)
 
 # Allow all CORS (for demo purposes; consider restricting in production)
 app.add_middleware(
@@ -27,8 +30,8 @@ def fetch_search_results(query):
     """
     Fetch search results from Google Custom Search for a given query.
     """
-    api_key = "AIzaSyBVP_V3Prv8SXy5gRVlw-IVRBd4ezf6tek"
-    search_engine_id = "32685d32c4ed04cca"
+    api_key = "AIzaSyA0NrKuXw2vuZytqHrN4TLXo1dN3Q7dLeg"
+    search_engine_id = "1764ec36a096143aa"
     url = "https://www.googleapis.com/customsearch/v1"
 
     params = {
@@ -127,10 +130,9 @@ def clean_text(text):
     cleaned_text = text.translate(str.maketrans('', '', string.punctuation))
     cleaned_text = ' '.join(cleaned_text.split())
     return cleaned_text
-
 def send_data_to_api(api_key, model, content):
     """
-    Send the processed data to the Groq API endpoint and return the response.
+    Send the processed data to the Groq API endpoint with enhanced error handling.
     """
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -145,18 +147,47 @@ def send_data_to_api(api_key, model, content):
         }]
     }
     
-    response = requests.post(url, headers=headers, data=json.dumps(data))
-    return response.json()
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        response.raise_for_status()  # Raise an exception for bad status codes
+        
+        response_data = response.json()
+        
+        # Check if response contains error
+        if 'error' in response_data:
+            logger.error(f"Groq API Error: {response_data['error']}")
+            return None
+            
+        # Validate response structure
+        if 'choices' not in response_data or not response_data['choices']:
+            logger.error("Invalid response structure from Groq API")
+            return None
+            
+        return response_data
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request failed: {str(e)}")
+        if hasattr(e.response, 'text'):
+            logger.error(f"Response text: {e.response.text}")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to decode JSON response: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in Groq API call: {str(e)}")
+        return None
 
 def process_reddit_data(product_query: str) -> str:
-    """Process Reddit data and return Groq insight immediately"""
+    """Process Reddit data with enhanced error handling"""
     try:
         results = fetch_search_results(product_query)
         if not results or "items" not in results:
+            logger.error("No items from Google Custom Search.")
             return None
 
         all_comments = []
         for item in results["items"]:
+            logger.info(f"Processing link: {item.get('link')}")
             if "reddit.com" in item.get("link", ""):
                 reddit_data = fetch_reddit_comments(item["link"])
                 if reddit_data:
@@ -168,6 +199,7 @@ def process_reddit_data(product_query: str) -> str:
                     all_comments.extend(valid_comments)
 
         if not all_comments:
+            logger.error("No valid comments found.")
             return None
 
         cleaned_comments = clean_text(" ".join(all_comments))
@@ -178,18 +210,28 @@ def process_reddit_data(product_query: str) -> str:
             "Provide your analysis in a clear, structured format."
         )
 
-        # Get immediate Groq response
-        groq_api_key = "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"
+        # Validate API key presence
+        groq_api_key = os.getenv("GROQ_API_KEY", "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")
+        if not groq_api_key:
+            logger.error("No Groq API key found")
+            return None
+
         model = "llama-3.3-70b-versatile"
         response = send_data_to_api(groq_api_key, model, prompt)
         
+        if not response:
+            return None
+            
         analysis = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not analysis:
+            logger.error("No analysis content in Groq response")
+            return None
+            
         return analysis
 
     except Exception as e:
-        print(f"Error processing Reddit data: {e}")
+        logger.error(f"Error processing Reddit data: {str(e)}")
         return None
-
 @app.post("/reddit-insights")
 async def reddit_insights(payload: dict):
     """
@@ -297,4 +339,4 @@ def generate_bow_counts(text):
     # Build a bag of words (frequency distribution)
     bow_counts = Counter(filtered_tokens)
 
-    return dict(bow_counts)
+    return dict(bow_counts) 

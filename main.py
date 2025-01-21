@@ -1,20 +1,18 @@
-import asyncio
-import json
-import logging
-import os
-from datetime import datetime
-from typing import Dict, List, Optional
-
-import aiofiles
-from db import AstraDB
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
-from groq import AsyncGroq, Groq
 from pydantic import BaseModel
-from scripts import (get_chat_response, refine_ad_requirements,
-                     search_youtube_videos)
+from typing import List, Dict, Optional
+import asyncio
+from datetime import datetime
+import json
+import logging
+from groq import Groq,AsyncGroq
+import os
+from scripts import search_youtube_videos,refine_ad_requirements,get_chat_response
 from video_processor import VideoProcessor
+import aiofiles
+from db import AstraDB
+from fastapi.responses import StreamingResponse
 
 app = FastAPI()
 
@@ -90,8 +88,20 @@ async def chat_message(chat_input: ChatInput):
         
         is_complete = '[SUFFICIENT]' in response
         
+        youtube_results = []
         if is_complete:
             search_query = response.split('[SUFFICIENT]')[1].strip()
+            youtube_results = search_youtube_videos(query=search_query)
+            if not youtube_results:  # Added validation
+                logger.warning("No YouTube results found for query.")
+                return {
+                    "message": response + "\nNo related YouTube videos found.",
+                    "is_complete": True,
+                    "session_id": chat_input.session_id,
+                    "youtube_results": [],
+                    "processed": False,
+                    "similar_search": None
+                }
             
             # Check for similar existing searches
             similar_search = await db.find_similar_search(search_query)
@@ -150,6 +160,11 @@ async def process_videos_background(session_id: str, search_query: str, youtube_
     try:
         processor = VideoProcessor(db)
         
+        # Provide additional logging if no videos are processed
+        if not youtube_results:
+            logger.warning(f"No videos to process for session {session_id}.")
+            return
+        
         processed_results = await asyncio.gather(*[
             processor.process_single_video(video, session_id) 
             for video in youtube_results
@@ -177,11 +192,39 @@ async def process_videos_background(session_id: str, search_query: str, youtube_
 
 @app.get("/results/{session_id}")
 async def get_results(session_id: str):
-    # Updated to use get_search instead of get_session
-    result = await db.get_search(session_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Search not found")
-    return result
+    try:
+        result = await db.get_search(session_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Search not found")
+        
+        # Return analyses directly from the search document
+        response = {
+            **result,
+            "analyses": result.get("analyses", {
+                "youtube": result.get("youtube_groq_analysis"),
+                "reddit": result.get("reddit_groq_insight")
+            })
+        }
+        return response
+    except Exception as e:
+        logger.error(f"Error getting results: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/analyses/{session_id}")
+async def get_analyses(session_id: str):
+    try:
+        result = await db.get_search(session_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Search not found")
+        
+        return {
+            "youtube_groq_analysis": result.get("youtube_groq_analysis"),
+            "reddit_groq_insight": result.get("reddit_groq_insight"),
+            "processed": result.get("processed", False)
+        }
+    except Exception as e:
+        logger.error(f"Error getting analyses: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Add new streaming endpoint
 @app.get("/reddit-analysis-stream/{session_id}")
@@ -215,28 +258,6 @@ async def stream_reddit_analysis(session_id: str):
         logger.error(f"Error streaming Reddit analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/render-page", response_class=HTMLResponse)
-async def render_page():
-    """Render a simple HTML page"""
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Advista</title>
-    </head>
-    <body>
-        <h1>The API is running..</h1>
-    
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "ok"}
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=80)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

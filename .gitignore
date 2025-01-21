@@ -1,3 +1,6 @@
 venv
-__pycache__
+test_downloads
 downloaded_videos
+
+session_*.json
+__pycache__
