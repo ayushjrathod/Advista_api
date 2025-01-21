@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: '3.11'
           
-      - name: Create virtual environment
+      - name: Create and prepare virtual environment
         run: |
           python -m venv antenv
           source antenv/bin/activate
@@ -26,18 +26,16 @@ jobs:
           
       - name: Create startup script
         run: |
-          echo "cd /home/site/wwwroot" > startup.sh
-          echo "python -m venv antenv" >> startup.sh
-          echo "source antenv/bin/activate" >> startup.sh
-          echo "pip install -r requirements.txt" >> startup.sh
+          echo "#!/bin/bash" > startup.sh
+          echo "source /home/site/wwwroot/antenv/bin/activate" >> startup.sh
           echo "uvicorn main:app --host 0.0.0.0 --port 8000" >> startup.sh
           chmod +x startup.sh
           
-      - name: Zip artifact for deployment
+      - name: Prepare deployment artifact
         run: |
-          zip -r release.zip . -x "*.git*" "*.github*"
+          zip -r release.zip . -x "*.git*" "*.github*" "__pycache__/*" "*.pyc" "*.pyo" "*.DS_Store"
           
-      - name: Upload artifact for deployment jobs
+      - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
           name: python-app
@@ -58,7 +56,7 @@ jobs:
         with:
           name: python-app
           
-      - name: Unzip artifact for deployment
+      - name: Extract deployment artifact
         run: unzip release.zip
         
       - name: Login to Azure
@@ -68,7 +66,7 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_5AB01C6F0D494607B02DE94546344BD7 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_8CE3670B7CD04093BD2C8D9B83E27A7B }}
           
-      - name: 'Deploy to Azure Web App'
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
