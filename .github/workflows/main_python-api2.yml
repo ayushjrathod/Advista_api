@@ -9,26 +9,34 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Set up Python version
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install dependencies
+          
+      - name: Create virtual environment
         run: |
-          python -m venv venv
-          source venv/bin/activate
+          python -m venv antenv
+          source antenv/bin/activate
+          pip install --upgrade pip
           pip install -r requirements.txt
-
-      # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
-
+          
+      - name: Create startup script
+        run: |
+          echo "cd /home/site/wwwroot" > startup.sh
+          echo "python -m venv antenv" >> startup.sh
+          echo "source antenv/bin/activate" >> startup.sh
+          echo "pip install -r requirements.txt" >> startup.sh
+          echo "uvicorn main:app --host 0.0.0.0 --port 8000" >> startup.sh
+          chmod +x startup.sh
+          
       - name: Zip artifact for deployment
-        run: zip -r release.zip ./* -x "*.git/*" -x "venv/*" # Exclude unnecessary files
-
+        run: |
+          zip -r release.zip . -x "*.git*" "*.github*"
+          
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
@@ -42,31 +50,24 @@ jobs:
       name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
     permissions:
-      id-token: write # This is required for requesting the JWT
+      id-token: write
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: python-app
-
+          
       - name: Unzip artifact for deployment
         run: unzip release.zip
-
+        
       - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_1A91B1DAA50F4C008A96E61D057FF4D4 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_5AB01C6F0D494607B02DE94546344BD7 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_8CE3670B7CD04093BD2C8D9B83E27A7B }}
-
-      - name: Set up `uvicorn` to run with FastAPI
-        run: |
-          # Create a startup script and set execute permission
-          echo "#!/bin/bash" > ./startup.sh
-          echo "uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4" >> ./startup.sh
-          chmod +x ./startup.sh
-
+          
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
