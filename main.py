@@ -1,25 +1,28 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Dict, Optional
 import asyncio
-from datetime import datetime
 import json
 import logging
-from groq import Groq,AsyncGroq
 import os
-from scripts import search_youtube_videos,refine_ad_requirements,get_chat_response
-from video_processor import VideoProcessor
+from datetime import datetime
+from typing import Dict, List, Optional
+
 import aiofiles
-from db import AstraDB
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from groq import AsyncGroq, Groq
+from pydantic import BaseModel
+
+from db import AstraDB
+from scripts import (get_chat_response, refine_ad_requirements,
+                     search_youtube_videos)
+from video_processor import VideoProcessor
 
 app = FastAPI()
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://delightful-moss-08d713800.4.azurestaticapps.net/","http://delightful-moss-08d713800.4.azurestaticapps.net/","http://localhost:3000","https://level-super-mind-out-of-bounds.vercel.app/","http://level-super-mind-out-of-bounds.vercel.app/"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
