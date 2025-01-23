@@ -72,7 +72,7 @@ load_dotenv()
 async def get_chat_response(client: AsyncGroq, messages: List[Dict[str, str]]) -> str:
     stream = await client.chat.completions.create(
         messages=messages,
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         temperature=0.7,
         max_completion_tokens=1024,
         stream=True

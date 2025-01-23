@@ -1,12 +1,13 @@
-import os
-import json
-from googleapiclient.discovery import build
-from datetime import datetime
-from groq import Groq,AsyncGroq
 import asyncio
+import json
 import os
-from typing import List, Dict
+from datetime import datetime
+from typing import Dict, List
+
 from dotenv import load_dotenv
+from googleapiclient.discovery import build
+from groq import AsyncGroq, Groq
+
 
 def search_youtube_videos(query, location=None, api_key="AIzaSyDWcpgnmYdYRiVGv5EmNwTYLX80ZNycyqA"):
     """
@@ -72,7 +73,7 @@ load_dotenv()
 async def get_chat_response(client: AsyncGroq, messages: List[Dict[str, str]]) -> str:
     stream = await client.chat.completions.create(
         messages=messages,
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         temperature=0.7,
         max_completion_tokens=1024,
         stream=True
@@ -164,6 +165,7 @@ if __name__ == "__main__":
     '''
 
 import yt_dlp
+
 
 def download_youtube_video(url, output_path):
 

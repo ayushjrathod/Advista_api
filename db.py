@@ -354,7 +354,7 @@ class AstraDB:
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": prompt}
                 ],
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 temperature=0.5,
                 max_completion_tokens=512
             )
