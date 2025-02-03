@@ -51,6 +51,27 @@ except Exception as e:
     logger.error(f"Failed to initialize database: {e}")
     raise
 
+from fastapi.responses import HTMLResponse
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return """
+    <html>
+        <head>
+            <title>Advista API</title>
+        </head>
+        <body>
+            <h1>Welcome to Advista API</h1>
+            <p>Use the /chat/start endpoint to start a new chat session.</p>
+            <p>Use the /chat/message endpoint to send messages and continue the conversation.</p>
+            <p>Use the /results/{session_id} endpoint to get the results of a search session.</p>
+            <p>Use the /analyses/{session_id} endpoint to get the analyses of a search session.</p>
+            <p>Use the /reddit-analysis-stream/{session_id} endpoint to stream Reddit analysis.</p>
+        </body>
+    </html>
+    """
+    
+
 @app.post("/chat/start")
 async def start_chat():
     """Initialize a new chat session"""
