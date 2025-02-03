@@ -1,14 +1,12 @@
 import asyncio
-import os
-import json
-from typing import List, Dict
-import yt_dlp
-from groq import Groq
-import aiofiles
-from concurrent.futures import ThreadPoolExecutor
 import logging
-from transcribe import Transcriber
+import os
+from typing import Dict, List
+
 import torch  # Add torch import
+import yt_dlp
+
+from transcribe import Transcriber
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

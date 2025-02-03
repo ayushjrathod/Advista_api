@@ -1,17 +1,15 @@
-from fastapi import FastAPI, Request,HTTPException
-from fastapi.responses import JSONResponse
-
-from fastapi.middleware.cors import CORSMiddleware
-import requests
 import json
-import string
-from bs4 import BeautifulSoup
-from fastapi.responses import FileResponse
-from nltk import word_tokenize, pos_tag
-from wordcloud import WordCloud
-from collections import Counter
-import os
 import logging
+import os
+import string
+from collections import Counter
+
+import requests
+from bs4 import BeautifulSoup
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from nltk import pos_tag, word_tokenize
 
 # Create FastAPI application
 app = FastAPI()
@@ -211,7 +209,7 @@ def process_reddit_data(product_query: str) -> str:
         )
 
         # Validate API key presence
-        groq_api_key = os.getenv("GROQ_API_KEY", "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")
+        groq_api_key = os.getenv("GROQ_API_KEY2", "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")
         if not groq_api_key:
             logger.error("No Groq API key found")
             return None

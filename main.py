@@ -5,16 +5,14 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
-import aiofiles
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from groq import AsyncGroq, Groq
+from groq import AsyncGroq
 from pydantic import BaseModel
 
 from db import AstraDB
-from scripts import (get_chat_response, refine_ad_requirements,
-                     search_youtube_videos)
+from scripts import get_chat_response, search_youtube_videos
 from video_processor import VideoProcessor
 
 app = FastAPI()
@@ -71,7 +69,7 @@ async def start_chat():
     
     # Send initial greeting
     return {
-        "message": "Hello! I'm here to help you create an effective advertisement. What would you like to create an ad for?",
+        "message": "Hello! Welcome to Advista. I'm here to assist you in creating an effective advertisement. What product or service would you like to advertise today?",  
         "session_id": session_id,
         "is_complete": False
     }

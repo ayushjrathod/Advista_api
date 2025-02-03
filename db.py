@@ -1,20 +1,16 @@
-import os
-from dotenv import load_dotenv
-from astrapy.client import DataAPIClient
-from sentence_transformers import SentenceTransformer
-import torch
-from typing import List, Dict, Iterable, Optional
-import logging
-from datetime import datetime
-import numpy as np
 import asyncio
-from reddit_insights_server import (
-    fetch_search_results,
-    fetch_reddit_comments,
-    is_valid_body,
-    process_reddit_data,  # Update import
-    send_data_to_api  # Add this import
-)
+import logging
+import os
+from datetime import datetime
+from typing import Dict, List, Optional
+
+import numpy as np
+import torch
+from astrapy.client import DataAPIClient
+from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+
+from reddit_insights_server import process_reddit_data
 
 # Fix logger initialization
 logger = logging.getLogger(__name__)

@@ -1,12 +1,12 @@
-import os
-import json
-from googleapiclient.discovery import build
-from datetime import datetime
-from groq import Groq,AsyncGroq
 import asyncio
+import json
 import os
-from typing import List, Dict
+from typing import Dict, List
+
 from dotenv import load_dotenv
+from googleapiclient.discovery import build
+from groq import AsyncGroq
+
 
 def search_youtube_videos(query, location=None, api_key="AIzaSyDWcpgnmYdYRiVGv5EmNwTYLX80ZNycyqA"):
     """

@@ -1,12 +1,9 @@
-from astrapy.db import AstraDB
-from dotenv import load_dotenv
 import os
-import json
-import multiprocessing
-import os
-import subprocess
+
 from astrapy import DataAPIClient
-from astrapy.constants import VectorMetric
+from dotenv import load_dotenv
+
+
 def main():
     load_dotenv()
     token = os.getenv('ASTRA_DB_TOKEN')
