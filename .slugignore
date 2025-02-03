@@ -3,3 +3,10 @@ venv/
 __pycache__/
 .git/
 *.log
+downloaded_videos/
+test_downloads/
+*.pth
+*.pt
+*.bin
+*.model
+hg_git/
