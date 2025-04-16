@@ -10,3 +10,13 @@ test_downloads/
 *.bin
 *.model
 hg_git/
+/downloaded_videos/
+*.pem
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env.local
+.venv
+*.log
