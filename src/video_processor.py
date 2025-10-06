@@ -3,7 +3,6 @@ import logging
 import os
 from typing import Dict, List
 
-import torch  # Add torch import
 import yt_dlp
 
 from transcribe import Transcriber
@@ -65,12 +64,9 @@ class VideoProcessor:
 
             if not transcript:
                 logger.error(f"Failed to transcribe video {video_id}")
-                return None
-
-            # Generate embedding from transcript using db's model
+                return None            # Generate embedding from transcript using db's API-based embedding
             try:
-                with torch.no_grad():
-                    transcript_embedding = self.db.model.encode(transcript).tolist()
+                transcript_embedding = await self.db._get_embedding(transcript)
             except Exception as e:
                 logger.error(f"Failed to generate embedding for video {video_id}: {e}")
                 transcript_embedding = None

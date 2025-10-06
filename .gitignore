@@ -12,3 +12,8 @@ venv/
 ENV/
 .DS_Store
 hg_git
+
+# uv specific
+.uv/
+
+.env

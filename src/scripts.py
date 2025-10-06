@@ -7,8 +7,10 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from groq import AsyncGroq, Groq
 
+from utils.config import Config
+config = Config()
 
-def search_youtube_videos(query, location=None, api_key="AIzaSyDWcpgnmYdYRiVGv5EmNwTYLX80ZNycyqA"):
+def search_youtube_videos(query, location=None, api_key=config.YOUTUBE_API_KEY):
     """
     Search YouTube videos with specific parameters
     Args:
@@ -18,13 +20,14 @@ def search_youtube_videos(query, location=None, api_key="AIzaSyDWcpgnmYdYRiVGv5E
     Returns:
         list: List of video details
     """
-    youtube = build('youtube', 'v3', developerKey=api_key or os.getenv("YOUTUBE_API_KEY"))
+    youtube = build('youtube', 'v3', developerKey=api_key)
     
     # Base search parameters
     search_params = {
         'part': 'id,snippet',
         'q': query,
         'maxResults': 4,
+        'order': 'viewCount',
         'type': 'video',
         'videoDimension': '2d',
         'videoDuration': 'medium',  # Between 4-20 minutes
@@ -34,13 +37,13 @@ def search_youtube_videos(query, location=None, api_key="AIzaSyDWcpgnmYdYRiVGv5E
     # Add location parameters if provided
     if location:
         search_params.update({
-            'location': f'{location[0]},{location[1]}',
-            'locationRadius': '15km'
+            'location': f'{location[0]},{location[1]}', #location is in the form of (latitude, longitude)
+            'locationRadius': '30km'
         })
     
     # Perform search
-    search_response = youtube.search().list(**search_params).execute()
-    
+    search_response = youtube.search().list(**search_params).execute() ## ** -> unpacks the dictionary into keyword arguments
+
     # Extract video details
     video_details = []
     for item in search_response['items']:
@@ -59,21 +62,17 @@ def search_youtube_videos(query, location=None, api_key="AIzaSyDWcpgnmYdYRiVGv5E
                 'title': video['snippet']['title'],
                 'description': video['snippet']['description'],
                 'link': f'https://www.youtube.com/watch?v={video_id}',
-                'has_captions': True,  # Since we filtered for videos with captions
+                'has_captions': True,
                 'duration': video['contentDetails']['duration']
             })
     
     return video_details
 
-
-# Load environment variables
-load_dotenv()
-
 async def get_chat_response(client: AsyncGroq, messages: List[Dict[str, str]]) -> str:
     stream = await client.chat.completions.create(
         messages=messages,
-        model="llama-3.1-8b-instant",
-        temperature=0.7,
+        model=config.LLM_MODEL,
+        temperature=0.5,
         max_completion_tokens=1024,
         stream=True
     )
@@ -87,17 +86,30 @@ async def get_chat_response(client: AsyncGroq, messages: List[Dict[str, str]]) -
 
 async def refine_ad_requirements():
     # Initialize client with API key
-    client = AsyncGroq(api_key=os.getenv('GROQ_API_KEY'))
+    client = AsyncGroq(api_key=config.GROQ_API_KEY)
     conversation = [
         {
             "role": "system",
-            "content": """You are an AI advertising assistant helping to gather detailed information about ad requirements. 
-            Ask focused questions one at a time to understand the client's needs. Be conversational but professional."""
+            "content": """
+            You are an AI advertising assistant tasked with understanding a client’s advertising requirements in detail. Engage the client in a professional yet conversational manner.
+
+            Ask one focused question at a time to gather precise information.
+
+            Clarify responses if needed before moving to the next question.
+
+            Collect information on key aspects such as: target audience, campaign goals, preferred platforms, budget, tone/style, creative assets, and timeline.
+
+            Summarize information periodically to ensure accuracy and alignment with client needs.
+
+            Maintain a helpful, professional, and approachable tone throughout.
+
+            Your goal: Build a comprehensive understanding of the client’s ad requirements efficiently and accurately.
+            """
         }
     ]
 
     # Initial user input
-    print("Hello! I'm here to help you create an effective advertisement. What would you like to create an ad for?")
+    print("👋 Hello! Let’s make an ad that grabs attention. Tell me, what are we promoting today?")
     user_input = input("You: ")
     
     while True:
@@ -112,11 +124,11 @@ async def refine_ad_requirements():
         conversation.append({"role": "assistant", "content": response})
         
         # Check if we have gathered enough information
-        if len(conversation) >= 8:  # Adjust this number based on your needs
+        if len(conversation) >= 8:
             summary = await get_chat_response(client, [
                 {
                     "role": "system",
-                    "content": "Summarize the gathered information into a structured format for youtube search make it in 4-5 words to search though ."
+                    "content": "Condense the collected information into a clear, 5-6 word phrase optimized for YouTube search."
                 },
                 {
                     "role": "user",
@@ -129,8 +141,7 @@ async def refine_ad_requirements():
 
 async def llm_query():
     final_query = await refine_ad_requirements()
-    print("\nFinal query of Requirements:")
-    print(final_query)
+
     results = search_youtube_videos(
         query=final_query
     )
@@ -138,35 +149,3 @@ async def llm_query():
 
 if __name__ == "__main__":
     asyncio.run(llm_query())
-
-# Example usage:
-if __name__ == "__main__":
-    # Example search with location (San Francisco coordinates)
-    # async def llm_query():
-    #     final_query = await refine_ad_requirements()
-    #     print("\nFinal query of Requirements:")
-    #     print(final_query)
-    # asyncio.run(llm_query())
-    # print("youtube_query",final_query)
-    
-
- 
-    '''    
-    ok so the main task here is this :Task 1: Automated Research and Trigger Finder (ART Finder)
-
-    Objective: The objective of ART Finder is to streamline the research phase of ad creation by automating data gathering and analysis. This tool will:
-
-    Identify user pain points and triggers from YouTube
-    Analyze competitor ads and strategies to uncover high-performing hooks, CTAs, and content formats.
-    Generate actionable insights and suggestions to help marketers craft effective, user-centric ads.
-    Key Features:
-
-    Comprehensive Research Automation:
-    Analyzes YouTube videos and competitor ads to identify trends, pain points, and effective solutions.
-    Actionable Insights Generation:
-    Summarizes key triggers and user problems. Suggests best-performing hooks, CTAs, and solutions tailored to the topic and audience.
-    Reference Dashboard:
-    Provides direct links to scraped YouTube videos and competitor ads for easy validation and inspiration. Visualizes insights with graphs, word clouds, and sentiment analysis.
-    User-Centric Interface:
-    Simple input fields for topics and brand guidelines. Intuitive dashboard showcasing insights and recommendations at a glance. But right now the 1st step or the 2nd stepo i am working on is to formulate proper search like if 
-    '''

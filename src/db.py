@@ -5,18 +5,16 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 import numpy as np
-import torch
+import requests
 from astrapy.client import DataAPIClient
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 
 from reddit_insights_server import process_reddit_data
 
 # Fix logger initialization
 logger = logging.getLogger(__name__)
 
-# Configure torch to suppress dynamo errors
-torch._dynamo.config.suppress_errors = True
+
 
 class AstraDB:
     def __init__(self):
@@ -36,26 +34,25 @@ class AstraDB:
             self.db = self.client.get_database(
                 self.api_endpoint,
                 token=self.token
-            )
-            
+            )            
             # Initialize collections with new names
             self.searches = self.db.get_collection("searches")
             self.youtube_insights = self.db.get_collection("youtube_insights")
             self.reddit_insights = self.db.get_collection("reddit_insights")
             self.reddit_comments = self.db.get_collection("reddit_comments")
             
-            # Configure model with device and compute settings
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            self.model = SentenceTransformer(
-                "jxm/cde-small-v2",
-                trust_remote_code=True,
-                device=device
-            )
-            # Ensure model is in eval mode
-            self.model.eval()
+            # Configure Hugging Face API
+            self.hf_token = os.getenv('HF_TOKEN')
+            if not self.hf_token:
+                raise ValueError("HF_TOKEN must be set in .env file")
+            
+            self.embedding_api_url = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
+            self.similarity_api_url = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/sentence-similarity"
+            self.headers = {
+                "Authorization": f"Bearer {self.hf_token}",            }
             
             self.vector_limit = 1000
-            logger.info(f"Model loaded successfully on {device}")
+            logger.info("Hugging Face API configured successfully")
             
         except Exception as e:
             logger.error(f"Failed to initialize: {str(e)}")
@@ -65,23 +62,56 @@ class AstraDB:
         """Split vector into chunks that fit within Astra DB limits"""
         return [vector[i:i + chunk_size] for i in range(0, len(vector), chunk_size)]
 
-    async def calculate_similarity(self, embeddings1: List[float], embeddings2: List[float]) -> float:
-        """Calculate similarity between two embeddings"""
+    async def _get_embedding(self, text: str) -> List[float]:
+        """Get embedding from Hugging Face API"""
         try:
-            with torch.no_grad():
-                similarity = self.model.similarity(
-                    [embeddings1],
-                    [embeddings2]
-                )
-            return float(similarity[0][0])
+            response = requests.post(
+                self.embedding_api_url,
+                headers=self.headers,
+                json={"inputs": text}
+            )
+            response.raise_for_status()
+            embedding = response.json()
+            
+            # Handle different response formats
+            if isinstance(embedding, list) and len(embedding) > 0:
+                if isinstance(embedding[0], list):
+                    return embedding[0]  # First embedding if batch
+                return embedding
+            return []
+        except Exception as e:
+            logger.error(f"Error getting embedding: {str(e)}")
+            return []
+
+    async def calculate_similarity(self, text1: str, text2: str) -> float:
+        """Calculate similarity between two texts using Hugging Face API"""
+        try:
+            payload = {
+                "inputs": {
+                    "source_sentence": text1,
+                    "sentences": [text2]
+                }
+            }
+            
+            response = requests.post(
+                self.similarity_api_url,
+                headers=self.headers,
+                json=payload
+            )
+            response.raise_for_status()
+            result = response.json()
+              # Extract similarity score
+            if isinstance(result, list) and len(result) > 0:
+                return float(result[0])
+            return 0.0
         except Exception as e:
             logger.error(f"Error calculating similarity: {str(e)}")
             return 0.0
 
     async def save_session(self, session_id: str, query: str, youtube_results: List[Dict]):
         try:
-            with torch.no_grad():
-                query_embedding = self.model.encode(query).tolist()
+            # Get embedding using Hugging Face API
+            query_embedding = await self._get_embedding(query)
             
             if len(query_embedding) > self.vector_limit:
                 logger.warning(f"Truncating embedding from {len(query_embedding)} to {self.vector_limit}")
@@ -130,14 +160,12 @@ class AstraDB:
                         "similarity_score": None
                     }
                     for video in batch
-                ]
-                
+                ]                
                 await loop.run_in_executor(
                     None,
                     lambda x: self.youtube_insights.insert_many(x, ordered=False),
                     insight_docs
                 )
-            
         except Exception as e:
             logger.error(f"Error saving search: {str(e)}")
             raise
@@ -159,17 +187,21 @@ class AstraDB:
                 "transcript_truncated": len(transcript.encode('utf-8')) > 8000
             }
 
+            # Generate embedding if not provided
+            if not embedding and transcript:
+                embedding = await self._get_embedding(transcript)
+
             if embedding and len(embedding) > self.vector_limit:
                 embedding = embedding[:self.vector_limit]
             
             if embedding:
                 update_doc["embedding"] = embedding
-                # Calculate similarity with search query
+                # Calculate similarity with search query using text similarity
                 search = await self.get_search(search_id)
-                if search and search.get("query_embedding"):
+                if search and search.get("query"):
                     similarity = await self.calculate_similarity(
-                        embedding,
-                        search["query_embedding"]
+                        search["query"],
+                        transcript
                     )
                     update_doc["similarity_score"] = similarity
 
@@ -232,14 +264,12 @@ class AstraDB:
                 "query_embedding": search.get("query_embedding"),
                 "youtube_results": videos,
                 "reddit_insights": reddit_insights,
-                "reddit_comments": reddit_comments,
-                "reddit_groq_insight": search.get("reddit_groq_insight"),  # Changed field name
+                "reddit_comments": reddit_comments,                "reddit_groq_insight": search.get("reddit_groq_insight"),  # Changed field name
                 "youtube_transcript_analysis": search.get("youtube_transcript_analysis"),
                 "timestamp": search["timestamp"],
                 "processed": search.get("processed", False),
                 "reddit_processed": search.get("reddit_processed", False)  # Add this field
             }
-            
         except Exception as e:
             logger.error(f"Error getting search: {str(e)}")
             raise
@@ -247,10 +277,6 @@ class AstraDB:
     async def find_similar_search(self, query: str, similarity_threshold: float = 0.85) -> Optional[Dict]:
         """Find similar processed search by query"""
         try:
-            # Generate query embedding
-            with torch.no_grad():
-                query_embedding = self.model.encode(query).tolist()
-
             # Get all processed searches
             loop = asyncio.get_event_loop()
             searches = await loop.run_in_executor(
@@ -261,12 +287,12 @@ class AstraDB:
             max_similarity = 0
             most_similar_search = None
 
-            # Compare with each search
+            # Compare with each search using text similarity
             for search in searches:
-                if search.get("query_embedding"):
+                if search.get("query"):
                     similarity = await self.calculate_similarity(
-                        query_embedding,
-                        search["query_embedding"]
+                        query,
+                        search["query"]
                     )
                     if similarity > max_similarity and similarity >= similarity_threshold:
                         max_similarity = similarity

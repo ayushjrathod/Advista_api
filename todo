@@ -1,0 +1,9 @@
+i understood scripts file.
+now next understand other files.
+
+things i think we can do till now:
+[] use langchain-groq instead of groq sdk, but first see why ?
+[] we create a query to search on youtube in scripts.py can we use it in reddit also ?
+[] what more things we can do in user profile such as taking input of past ads they made to understand their style and pass it to llm as context.
+[] check astra_db dashboard
+  https://astra.datastax.com/org/a5ade70b-5d47-4175-a9fe-da12789668fc/database/f1709d77-1fe2-47f5-b976-1261a15c3375/summary
