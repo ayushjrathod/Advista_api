@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
     
     # App environment
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = "production"
 
     # Server settings
     PORT: int = 8000
@@ -17,14 +17,14 @@ class Settings(BaseSettings):
     DIRECT_URL: Optional[str] = None
     
     # JWT settings
-    SECRET_KEY: str = "your-secret-key-here"
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
     # Email settings
-    MAIL_USERNAME: str = "your-email@gmail.com"
-    MAIL_PASSWORD: str = "your-app-password"
-    MAIL_FROM: str = "your-email@gmail.com"
+    MAIL_USERNAME: str = ""
+    MAIL_PASSWORD: str = ""
+    MAIL_FROM: str = ""
     MAIL_PORT: int = 587
     MAIL_SERVER: str = "smtp.gmail.com"
     MAIL_STARTTLS: Optional[bool] = True
@@ -40,6 +40,6 @@ class Settings(BaseSettings):
     FIREBASE_CLIENT_ID: str = ""
     
     # Frontend URL for email links and CORS
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = ""
 
 settings = Settings()
