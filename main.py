@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from src.utils.config import settings
-from src.controllers.auth.auth_controller import router as auth_router
+from src.controllers.auth_controller import router as auth_router
+from src.controllers.chat_controller import router as chat_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ app.add_middleware(
 
 # Include authentication routes
 app.include_router(auth_router, prefix="/api/v1/auth")
+app.include_router(chat_router, prefix="/api/v1/chat")
 
 @app.get("/health")
 async def health_check():

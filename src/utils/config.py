@@ -4,7 +4,11 @@ from typing import Optional
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
     
     # App environment
     ENVIRONMENT: str = "production"
@@ -41,5 +45,10 @@ class Settings(BaseSettings):
     
     # Frontend URL for email links and CORS
     FRONTEND_URL: str = ""
+
+    #LLM API keys 
+    OPENAI_API_KEY1: str = ""
+    GROQ_API_KEY1: str = ""
+    GROQ_API_KEY2: str = ""
 
 settings = Settings()

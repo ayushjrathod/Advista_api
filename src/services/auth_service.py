@@ -263,6 +263,42 @@ class AuthService:
         except Exception as e:
             logger.error(f"Failed to reset password: {str(e)}")
             return False
+    
+    async def resend_verification_code(self, email: str) -> bool:
+        """Resend verification code to user email"""
+        try:
+            await self._ensure_prisma_connected()
+            user = await self.prisma.user.find_unique(where={"email": email})
+            if not user:
+                return False
+            
+            # Check if user is already verified
+            if user.isVerified:
+                return False
+            
+            # Generate new verification code
+            verification_code = email_service.generate_verification_code()
+            
+            # Update user with new verification code
+            await self.prisma.user.update(
+                where={"email": email},
+                data={
+                    "verifyCode": verification_code,
+                    "verifyCodeExpiresAt": datetime.now(timezone.utc) + timedelta(minutes=10)
+                }
+            )
+            
+            # Send verification email (non-blocking)
+            try:
+                await email_service.send_verification_email(email, verification_code)
+            except Exception as e:
+                logger.error(f"Failed to send verification email: {str(e)}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to resend verification code: {str(e)}")
+            return False
 
 # Global instance
 auth_service = AuthService()

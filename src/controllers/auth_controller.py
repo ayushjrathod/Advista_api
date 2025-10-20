@@ -6,6 +6,9 @@ from src.models.user import (
     ResetPasswordRequest, MessageResponse
 )
 from src.services.auth_service import auth_service
+from src.services.chatbot_service import chatbot_service
+from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
 import logging
 
 logger = logging.getLogger(__name__)
@@ -199,6 +202,32 @@ async def reset_password(reset_data: ResetPasswordRequest):
             detail="Internal server error"
         )
 
+@router.post("/resend-verification", response_model=MessageResponse)
+async def resend_verification_code(request_data: ForgotPasswordRequest):
+    """Resend verification code to user email"""
+    try:
+        success = await auth_service.resend_verification_code(request_data.email)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found or already verified"
+            )
+        
+        return MessageResponse(
+            message="Verification code sent successfully",
+            success=True
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resend verification error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: str = Depends(get_current_user)):
     """Get current user information"""
@@ -228,3 +257,4 @@ async def get_current_user_info(current_user: str = Depends(get_current_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
+
