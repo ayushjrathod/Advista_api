@@ -16,12 +16,46 @@ app = FastAPI(
 )
 
 
+# CORS configuration
+allowed_origins = []
+
+# Add development origins
+if settings.ENVIRONMENT == "development":
+    allowed_origins.extend([
+        "http://localhost:3000",
+        "http://localhost:5173",  # Vite default port
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ])
+
+# Add frontend URL if specified
+if settings.FRONTEND_URL:
+    allowed_origins.append(settings.FRONTEND_URL)
+
+# Remove empty strings and duplicates
+allowed_origins = list(set([origin for origin in allowed_origins if origin]))
+
+# Log CORS configuration for debugging
+logger.info(f"CORS allowed origins: {allowed_origins}")
+logger.info(f"Environment: {settings.ENVIRONMENT}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+    ],
+    expose_headers=["*"],
 )
 
 # Include authentication routes
