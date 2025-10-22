@@ -23,15 +23,21 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Log in to ACR
+      # Log in to ACR using Azure CLI
       - name: ACR Login
         run: az acr login --name ${{ secrets.ACR_NAME }}
 
       # Build and Push Docker Image (local GitHub build)
       - name: Build and Push Docker Image
         run: |
-          docker build -t ${{ secrets.ACR_NAME }}.azurecr.io/python-api:latest .
-          docker push ${{ secrets.ACR_NAME }}.azurecr.io/python-api:latest
+          # Get ACR login server
+          ACR_LOGIN_SERVER=$(az acr show --name ${{ secrets.ACR_NAME }} --query loginServer --output tsv)
+
+          # Build the image
+          docker build -t $ACR_LOGIN_SERVER/python-api:latest .
+
+          # Push the image
+          docker push $ACR_LOGIN_SERVER/python-api:latest
 
   # ------------------------------------
   # JOB 2: Deploy (Restart Container)
