@@ -35,10 +35,6 @@ if settings.FRONTEND_URL:
 # Remove empty strings and duplicates
 allowed_origins = list(set([origin for origin in allowed_origins if origin]))
 
-# Log CORS configuration for debugging
-logger.info(f"CORS allowed origins: {allowed_origins}")
-logger.info(f"Environment: {settings.ENVIRONMENT}")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -62,9 +58,13 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/v1/auth")
 app.include_router(chat_router, prefix="/api/v1/chat")
 
+@app.get("/")
+async def root():
+    return JSONResponse(content={"status": "ok", "message": "Advista API is running"}, status_code=200)
+
 @app.get("/health")
 async def health_check():
-    return JSONResponse(content={"status": "ok"}, status_code=200)
+    return JSONResponse(content={"status": "ok", "message": "Advista API is healthy"}, status_code=200)
 
 if __name__ == "__main__":
     import uvicorn 

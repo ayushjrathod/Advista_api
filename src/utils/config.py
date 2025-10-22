@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = ""
 
     #LLM API keys 
-    OPENAI_API_KEY1: str = ""
     GROQ_API_KEY1: str = ""
     GROQ_API_KEY2: str = ""
 
