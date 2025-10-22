@@ -13,3 +13,5 @@ docker build -t adivistaapiimage.azurecr.io/python-api:latest . && docker push a
 ```
 
 then restart the advista-api-container in azure portal
+
+##
