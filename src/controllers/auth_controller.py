@@ -1,24 +1,27 @@
-from fastapi import APIRouter, HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, HTTPException, Depends, status, Request, Response
 from src.models.user import (
-    UserCreate, UserResponse, UserSignIn, Token, 
+    UserCreate, UserResponse, UserSignIn, 
     VerifyCodeRequest, ForgotPasswordRequest, 
     ResetPasswordRequest, MessageResponse
 )
 from src.services.auth_service import auth_service
-from src.services.chatbot_service import chatbot_service
-from pydantic import BaseModel
-from fastapi.responses import StreamingResponse
+from src.utils.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-security = HTTPBearer()
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get current authenticated user"""
-    token = credentials.credentials
+async def get_current_user(request: Request):
+    """Get current authenticated user from HttpOnly cookie"""
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     email = auth_service.verify_token(token)
     if email is None:
         raise HTTPException(
@@ -74,9 +77,9 @@ async def signup(user_data: UserCreate):
             detail="Internal server error"
         )
 
-@router.post("/signin", response_model=Token)
-async def signin(user_credentials: UserSignIn):
-    """Authenticate user and return access token"""
+@router.post("/signin", response_model=MessageResponse)
+async def signin(user_credentials: UserSignIn, response: Response):
+    """Authenticate user and set HttpOnly cookie"""
     try:
         result = await auth_service.authenticate_user(
             user_credentials.email, 
@@ -96,9 +99,19 @@ async def signin(user_credentials: UserSignIn):
                 detail=result["error"]
             )
         
-        return Token(
-            access_token=result["access_token"],
-            token_type=result["token_type"]
+        # Set HttpOnly cookie
+        response.set_cookie(
+            key="access_token",
+            value=result["access_token"],
+            httponly=True,
+            secure=settings.COOKIE_SECURE,
+            samesite=settings.COOKIE_SAMESITE,
+            max_age=settings.COOKIE_MAX_AGE
+        )
+        
+        return MessageResponse(
+            message="Sign in successful",
+            success=True
         )
         
     except HTTPException:
@@ -109,6 +122,21 @@ async def signin(user_credentials: UserSignIn):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
+
+@router.post("/logout", response_model=MessageResponse)
+async def logout(response: Response):
+    """Logout user by clearing HttpOnly cookie"""
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE
+    )
+    
+    return MessageResponse(
+        message="Logged out successfully",
+        success=True
+    )
 
 @router.post("/verify-email", response_model=MessageResponse)
 async def verify_email(verify_data: VerifyCodeRequest):

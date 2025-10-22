@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyHttpUrl, Field
 from typing import Optional
 
 
@@ -25,6 +24,17 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
+    # Cookie settings
+    COOKIE_SECURE: bool = True  # Will be overridden in __init__
+    COOKIE_SAMESITE: str = "lax"
+    COOKIE_MAX_AGE: int = 3600  # 1 hour in seconds
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Set secure to False for development
+        if self.ENVIRONMENT == "development":
+            self.COOKIE_SECURE = False
+    
     # Email settings
     MAIL_USERNAME: str = ""
     MAIL_PASSWORD: str = ""
@@ -43,9 +53,6 @@ class Settings(BaseSettings):
     FIREBASE_CLIENT_EMAIL: str = ""
     FIREBASE_CLIENT_ID: str = ""
     
-    # Frontend URL for email links and CORS
-    FRONTEND_URL: str = ""
-
     #LLM API keys 
     GROQ_API_KEY1: str = ""
     GROQ_API_KEY2: str = ""

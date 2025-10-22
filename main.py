@@ -28,12 +28,11 @@ if settings.ENVIRONMENT == "development":
         "http://127.0.0.1:5173",
     ])
 
-# Add frontend URL if specified
-if settings.FRONTEND_URL:
-    allowed_origins.append(settings.FRONTEND_URL)
-
-# Remove empty strings and duplicates
-allowed_origins = list(set([origin for origin in allowed_origins if origin]))
+if settings.ENVIRONMENT == "production":
+    allowed_origins.extend([
+        "https://advista.ayushjrathod.live",
+        "https://advista-prod.vercel.app",
+    ])
 
 app.add_middleware(
     CORSMiddleware,
