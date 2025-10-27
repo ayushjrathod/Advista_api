@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     FIREBASE_CLIENT_ID: str = ""
     
     #LLM API keys 
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_API_KEY1: str = ""
     GROQ_API_KEY2: str = ""
 
