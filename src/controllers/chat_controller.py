@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException
 from src.services.chatbot_service import chatbot_service
 from src.models.research_brief import ResearchBrief

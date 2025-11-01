@@ -4,20 +4,18 @@ from typing import List, Optional
 
 class ResearchBrief(BaseModel):
     """Research brief schema for advertising campaign"""
-    product_name: str = Field("", description="Name of the product or service")
+    product_name: str = Field("", description="Name of the product/service")
     product_description: str = Field("", description="Detailed description of the product/service")
     target_audience: str = Field("", description="Description of the target audience/customer segment")
-    competitor_names: List[str] = Field(default_factory=list, description="List of competitor names")
+    competitor_names: List[str] = Field(default_factory=list, description="List of competitor names/products/services in the market")
     campaign_goals: str = Field("", description="Primary goals and objectives for the campaign")
     preferred_platforms: List[str] = Field(default_factory=list, description="Preferred advertising platforms (e.g., Google Ads, Facebook, Instagram)")
-    budget_range: str = Field("", description="Budget range for the campaign")
     tone_and_style: str = Field("", description="Desired tone and style for creative content")
-    timeline: str = Field("", description="Campaign timeline or deadline")
     additional_notes: str = Field("", description="Any additional context or requirements")
 
     def get_completion_percentage(self) -> float:
         """Calculate how much of the brief is complete"""
-        total_fields = 10
+        total_fields = 8
         filled_fields = sum([
             bool(self.product_name),
             bool(self.product_description),
@@ -25,9 +23,7 @@ class ResearchBrief(BaseModel):
             bool(self.competitor_names),
             bool(self.campaign_goals),
             bool(self.preferred_platforms),
-            bool(self.budget_range),
             bool(self.tone_and_style),
-            bool(self.timeline),
             bool(self.additional_notes),
         ])
         return (filled_fields / total_fields) * 100
@@ -47,24 +43,25 @@ class ResearchBrief(BaseModel):
             missing.append("campaign_goals")
         if not self.preferred_platforms:
             missing.append("preferred_platforms")
-        if not self.budget_range:
-            missing.append("budget_range")
         if not self.tone_and_style:
             missing.append("tone_and_style")
-        if not self.timeline:
-            missing.append("timeline")
+        if not self.additional_notes:
+            missing.append("additional_notes")
         return missing
 
     def is_complete(self) -> bool:
         """Check if core required fields are filled (enough to start research)"""
-        # Core fields needed to start research
+        # Treat all eight fields as contributing to readiness; require 7/8
         core_fields = [
             bool(self.product_name),
+            bool(self.product_description),
             bool(self.target_audience),
             bool(self.campaign_goals),
-            bool(self.budget_range),
+            bool(self.competitor_names),
+            bool(self.preferred_platforms),
+            bool(self.tone_and_style),
+            bool(self.additional_notes),
         ]
-        # At least 3 out of 4 core fields + some additional info
-        has_core = sum(core_fields) >= 3
-        has_additional = bool(self.competitor_names or self.preferred_platforms or self.tone_and_style)
-        return has_core and has_additional
+        # At least 7 out of 8 fields should be present
+        has_core = sum(core_fields) >= 7
+        return has_core
