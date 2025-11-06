@@ -59,6 +59,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "fastapi-mail" },
     { name = "firebase-admin" },
+    { name = "google-search-results" },
     { name = "langchain" },
     { name = "langchain-groq" },
     { name = "langgraph" },
@@ -82,6 +83,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.119.0" },
     { name = "fastapi-mail", specifier = ">=1.4.1" },
     { name = "firebase-admin", specifier = ">=6.4.0" },
+    { name = "google-search-results", specifier = ">=2.4.2" },
     { name = "langchain", specifier = ">=1.0.1" },
     { name = "langchain-groq", specifier = ">=1.0.0" },
     { name = "langgraph", specifier = ">=1.0.0" },
@@ -623,6 +625,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/58/5a/0efdc02665dca14e0
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/35/b8d3baf8c46695858cb9d8835a53baa1eeb9906ddaf2f728a5f5b640fd1e/google_resumable_media-2.7.2-py2.py3-none-any.whl", hash = "sha256:3ce7551e9fe6d99e9a126101d2536612bb73486721951e9562fee0f90c6ababa", size = 81251, upload-time = "2024-08-07T22:20:36.409Z" },
 ]
+
+[[package]]
+name = "google-search-results"
+version = "2.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/77/30/b3a6f6a2e00f8153549c2fa345c58ae1ce8e5f3153c2fe0484d444c3abcb/google_search_results-2.4.2.tar.gz", hash = "sha256:603a30ecae2af8e600b22635757a6df275dad4b934f975e67878ccd640b78245", size = 18818, upload-time = "2023-03-10T11:13:09.953Z" }
 
 [[package]]
 name = "googleapis-common-protos"

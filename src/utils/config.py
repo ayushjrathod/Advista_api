@@ -58,4 +58,5 @@ class Settings(BaseSettings):
     GROQ_API_KEY1: str = ""
     GROQ_API_KEY2: str = ""
 
+    SERPAPI_API_KEY: str = ""
 settings = Settings()
