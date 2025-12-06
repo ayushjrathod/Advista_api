@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-py"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  password String
+  firebaseUid String? @unique
+  verifyCode String?
+  isVerified Boolean @default(false)
+  verifyCodeExpiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}

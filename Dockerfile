@@ -1,24 +1,21 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
-WORKDIR /code
+WORKDIR /app
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install uv
 
-# Copy project files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv
-RUN uv sync --frozen --no-dev
+RUN uv pip install --system -e .
 
-RUN useradd -m -u 1000 user
-USER user
-ENV PATH="/home/user/.local/bin:$PATH"
+COPY . .
 
-# Copy application code
-COPY . /code
+RUN prisma generate
 
 EXPOSE 8000
 
-# Command to run the application
-CMD ["sh", "-c", "uv run uvicorn main:app --host 0.0.0.0 --port $PORT --reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

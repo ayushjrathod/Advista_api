@@ -1,19 +1,12 @@
-venv
-test_downloads
-downloaded_videos
-
-session_*.json
+# Python-generated files
 __pycache__/
-*.py[cod]
-*$py.class
-.env
-.venv
-venv/
-ENV/
-.DS_Store
-hg_git
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
 
-# uv specific
-.uv/
+# Virtual environments
+.venv
 
 .env
