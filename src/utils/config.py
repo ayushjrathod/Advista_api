@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_API_KEY1: str = ""
     GROQ_API_KEY2: str = ""
+    GROQ_API_KEY3: str = ""
+    GROQ_API_KEY4: str = ""
+    GROQ_API_KEY5: str = ""
 
     SERPAPI_API_KEY: str = ""
 settings = Settings()
