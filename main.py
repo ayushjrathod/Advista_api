@@ -3,19 +3,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from src.utils.config import settings
-from src.controllers.auth_controller import router as auth_router
-from src.controllers.chat_controller import router as chat_router
-from src.controllers.research_controller import router as research_router
+from src.controllers.auth_controller import auth_router 
+from src.controllers.chat_controller import chat_router 
+from src.controllers.research_controller import research_router
+from src.services.database_service import db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+async def lifespan(app: FastAPI):
+    await db.connect()
+    yield
+    await db.disconnect()
+
 app = FastAPI(
     title = "Advista",
     description = "Advertisement Research Engine",
+    lifespan=lifespan,
     version = "2.0.0"
 )
-
 
 # CORS configuration
 allowed_origins = []
@@ -53,6 +59,8 @@ app.add_middleware(
     ],
     expose_headers=["*"],
 )
+
+
 
 # Include authentication routes
 app.include_router(auth_router, prefix="/api/v1/auth")

@@ -19,5 +19,46 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@map("users")
+  @@map("users") //maps "User" model to "users" table in the db
+}
+enum ChatSessionStatus {
+  initialized
+  brief_generated
+}
+
+model ChatSession {
+  threadId String @id @default(uuid())
+  userId String? // can be null if session is not associated with a user
+  researchBrief String?
+  status ChatSessionStatus @default(initialized) // e.g. "initialized" | "brief_generated"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastActivity DateTime?
+  expiresAt DateTime?
+
+  @@map("chat_sessions")
+}
+
+// TODO: make it more verbose
+enum ResearchSessionStatus {
+  started
+  researching
+  completed
+  failed
+}
+
+model ResearchSession {
+  id String @id @default(uuid())
+  threadId String
+  userId String?
+  researchBrief String?
+  status ResearchSessionStatus @default(started)
+  queries Json?
+  results Json?
+  report Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  chatSession ChatSession @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
+
+  @@map("research_sessions")
 }

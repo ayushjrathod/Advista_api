@@ -6,6 +6,7 @@ from prisma import Prisma
 from src.utils.config import settings
 from src.services.firebase_service import firebase_service
 from src.services.email_service import email_service
+from src.services.database_service import db
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,19 +14,8 @@ logger = logging.getLogger(__name__)
 class AuthService:
     def __init__(self):
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        self.prisma = None
-    
-    async def _ensure_prisma_connected(self):
-        """Ensure Prisma client is connected"""
-        if self.prisma is None:
-            self.prisma = Prisma()
-        if not self.prisma.is_connected():
-            await self.prisma.connect()
-    
-    async def _cleanup_prisma(self):
-        """Clean up Prisma connection"""
-        if self.prisma and self.prisma.is_connected():
-            await self.prisma.disconnect()
+        # Use shared Prisma client; assumes app connects at startup
+        self.prisma = db.prisma
     
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash"""
@@ -62,7 +52,6 @@ class AuthService:
         """Create a new user"""
         firebase_user = None
         try:
-            await self._ensure_prisma_connected()
             # Check if user already exists
             existing_user = await self.prisma.user.find_unique(where={"email": email})
             if existing_user:
@@ -121,7 +110,6 @@ class AuthService:
     async def authenticate_user(self, email: str, password: str) -> Optional[dict]:
         """Authenticate user"""
         try:
-            await self._ensure_prisma_connected()
             # Get user from database
             user = await self.prisma.user.find_unique(where={"email": email})
             if not user:
@@ -155,7 +143,6 @@ class AuthService:
     async def verify_email(self, email: str, verification_code: str) -> bool:
         """Verify user email with code"""
         try:
-            await self._ensure_prisma_connected()
             user = await self.prisma.user.find_unique(where={"email": email})
             if not user:
                 return False
@@ -189,7 +176,6 @@ class AuthService:
     async def forgot_password(self, email: str) -> bool:
         """Initiate forgot password process"""
         try:
-            await self._ensure_prisma_connected()
             user = await self.prisma.user.find_unique(where={"email": email})
             if not user:
                 return False
@@ -221,7 +207,6 @@ class AuthService:
     async def reset_password(self, email: str, reset_code: str, new_password: str) -> bool:
         """Reset user password"""
         try:
-            await self._ensure_prisma_connected()
             user = await self.prisma.user.find_unique(where={"email": email})
             if not user:
                 return False
@@ -267,7 +252,6 @@ class AuthService:
     async def resend_verification_code(self, email: str) -> bool:
         """Resend verification code to user email"""
         try:
-            await self._ensure_prisma_connected()
             user = await self.prisma.user.find_unique(where={"email": email})
             if not user:
                 return False

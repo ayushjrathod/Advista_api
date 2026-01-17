@@ -1,60 +1,32 @@
 import json
 import logging
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from typing import Union
+from pydantic import BaseModel
+
 from fastapi import APIRouter, HTTPException
 from src.models.research_brief import ResearchBrief
 from src.models.research_insights import ProcessedSearchResults
-from pydantic import BaseModel
 from src.services.research_service import research_service
 from src.services.analysis_service import analysis_service
 from src.services.synthesis_service import synthesis_service
 from src.utils.config import settings
-from serpapi import GoogleSearch
+from src.services.serpapi_service import run_serp_search_async
 
 logger = logging.getLogger(__name__)
-
-# Thread pool for running blocking SerpAPI calls
-executor = ThreadPoolExecutor(max_workers=5)
 
 class StartResearchRequest(BaseModel):
     research_brief: ResearchBrief
 
-router = APIRouter()
+research_router = APIRouter()
 
-
-def run_serp_search(query: str, query_type: str) -> dict:
-    """
-    Run a single SerpAPI search (blocking).
-    This will be executed in a thread pool.
-    """
-    serp_params = {
-        "api_key": settings.SERPAPI_API_KEY,
-        "engine": "google",
-        "q": query,
-        "output": "json",
-    }
-    search = GoogleSearch(serp_params)
-    results = search.get_dict()
-    return {"query_type": query_type, "query": query, "results": results}
-
-
-async def run_serp_search_async(query: str, query_type: str) -> dict:
-    """
-    Run SerpAPI search asynchronously using thread pool executor.
-    """
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, run_serp_search, query, query_type)
-
-
-@router.post("/start-research")
+@research_router.post("/start-research")
 async def start_research(request: StartResearchRequest):
     """
     Endpoint to start research with the completed brief.
     This will be called by the frontend after user confirms the brief.
     """
     try:
+        
         # Validate that the brief has required fields
         if not request.research_brief.is_complete():
             raise HTTPException(
@@ -63,11 +35,7 @@ async def start_research(request: StartResearchRequest):
             )
         
         # Generate search params from research brief
-        search_params = await research_service.create_research_query(request.research_brief)
-        # TODO: store search_params in db if needed in later stage 
-        with open("search_params.json", "w") as f:
-            json.dump(search_params.model_dump(), f, indent=2)
-        logger.info("Search parameters saved to search_params.json")
+        search_params = await research_service.create_research_query(request.research_brief, threadId = request.threadId)
         
         # Define query types and their corresponding queries
         query_mapping = {
@@ -77,7 +45,7 @@ async def start_research(request: StartResearchRequest):
             "campaign": search_params.campaign_strategy_query,
             "platform": search_params.platform_specific_query,
         }
-        
+       # TODO: integrate the task queue here, set status to 'researching' in db and store the results when done
         # Filter out empty queries and run all searches concurrently
         search_tasks = [
             run_serp_search_async(query, query_type)
@@ -88,6 +56,7 @@ async def start_research(request: StartResearchRequest):
         # Execute all searches in parallel
         all_results = await asyncio.gather(*search_tasks, return_exceptions=True)
         
+        #TODO: process results like embeddings, analysis, synthesis etc.
         # Process results and handle any exceptions
         successful_results = {}
         for item in all_results:
@@ -151,7 +120,7 @@ async def start_research(request: StartResearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/process-existing")
+@research_router.post("/process-existing")
 async def process_existing_results():
     """
     Process existing search_results.json file without re-running SerpAPI searches.
@@ -211,7 +180,7 @@ async def process_existing_results():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/processed-results")
+@research_router.get("/processed-results")
 async def get_processed_results():
     """
     Get the processed research results.
@@ -237,7 +206,7 @@ async def get_processed_results():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/research-context")
+@research_router.get("/research-context")
 async def get_research_context():
     """
     Get the combined research context (text format for LLM synthesis).
@@ -264,7 +233,7 @@ async def get_research_context():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/report")
+@research_router.get("/report")
 async def get_research_report():
     """
     Get the synthesized research report.
@@ -290,7 +259,7 @@ async def get_research_report():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/synthesize")
+@research_router.post("/synthesize")
 async def synthesize_only():
     """
     Run LLM synthesis on existing processed results without re-processing.

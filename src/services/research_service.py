@@ -1,22 +1,13 @@
-import asyncio
 import logging
-from typing import Any, Dict, List
-
-from serpapi import GoogleSearch
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
 
 from src.models.research_brief import ResearchBrief
 from src.models.search_params import SearchParams
-from src.models.search_results import (
-    ResearchExecutionResult,
-    SearchQueryResult,
-    SearchResultsCollection,
-)
 from src.utils.config import settings
 logger = logging.getLogger(__name__)
-
+from database_service import db
 
 class ResearchService:
     def __init__(self):
@@ -30,7 +21,7 @@ class ResearchService:
         # Initialize structured output LLM for search params extraction
         self.params_extractor_llm = self.llm.with_structured_output(SearchParams)
 
-    async def create_research_query(self, research_brief: ResearchBrief) -> SearchParams:
+    async def create_research_query(self, research_brief: ResearchBrief, threadId: str) -> SearchParams:
 
         # Create prompt for extracting search queries
         brief_summary = f"""
@@ -68,9 +59,16 @@ class ResearchService:
         """
         
         try:
-            return await self.params_extractor_llm.ainvoke([
+            search_params_results = await self.params_extractor_llm.ainvoke([
                 HumanMessage(content=extraction_prompt)
             ])
+            await db.researchsession.insert(
+                where={"threadId": threadId},
+                data = {
+                    "queries": search_params_results.model_dump_json()
+                }
+            )
+            return search_params_results
         except Exception as e:
             logger.error(f"Error generating search params: {e}")
             return SearchParams()
