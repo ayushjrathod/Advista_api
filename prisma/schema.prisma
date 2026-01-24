@@ -9,56 +9,64 @@ datasource db {
 }
 
 model User {
-  id String @id @default(uuid())
-  email String @unique
-  password String
-  firebaseUid String? @unique
-  verifyCode String?
-  isVerified Boolean @default(false)
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  password            String
+  firebaseUid         String?   @unique
+  verifyCode          String?
+  isVerified          Boolean   @default(false)
   verifyCodeExpiresAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  @@map("users") //maps "User" model to "users" table in the db
+  @@map("users")
 }
+
+model ChatSession {
+  threadId         String            @id @default(uuid())
+  userId           String?
+  researchBrief    String?
+  status           ChatSessionStatus @default(initialized)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  lastActivity     DateTime?
+  expiresAt        DateTime?
+  meta             Json?
+  researchSessions ResearchSession[]
+
+  @@map("chat_sessions")
+}
+
+model ResearchSession {
+  id               String                @id @default(uuid())
+  threadId         String
+  userId           String?
+  researchBrief    Json?
+  status           ResearchSessionStatus @default(pending)
+  taskIds          Json?
+  searchParams     Json?
+  searchResults    Json?
+  processedResults Json?
+  report           Json?
+  meta             Json?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  completedAt      DateTime?
+  chatSession      ChatSession           @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
+
+  @@map("research_sessions")
+}
+
 enum ChatSessionStatus {
   initialized
   brief_generated
 }
 
-model ChatSession {
-  threadId String @id @default(uuid())
-  userId String? // can be null if session is not associated with a user
-  researchBrief String?
-  status ChatSessionStatus @default(initialized) // e.g. "initialized" | "brief_generated"
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  lastActivity DateTime?
-  expiresAt DateTime?
-
-  @@map("chat_sessions")
-}
-
-// TODO: make it more verbose
 enum ResearchSessionStatus {
-  started
+  pending
   researching
+  processing
+  synthesizing
   completed
   failed
-}
-
-model ResearchSession {
-  id String @id @default(uuid())
-  threadId String
-  userId String?
-  researchBrief String?
-  status ResearchSessionStatus @default(started)
-  queries Json?
-  results Json?
-  report Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  chatSession ChatSession @relation(fields: [threadId], references: [threadId], onDelete: Cascade)
-
-  @@map("research_sessions")
 }

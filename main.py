@@ -75,6 +75,42 @@ async def root():
 async def health_check():
     return JSONResponse(content={"status": "ok", "message": "Advista API is healthy"}, status_code=200)
 
+@app.post('/tasks/append-task')
+async def append_tesk(data: dict):
+    from worker.celery_app import celery_app
+    result = celery_app.send_task('process_data', args = [data])
+    return JSONResponse(content = {
+        "task_id":result.id,
+        "status":"task submitted"
+    })
+@app.get("/tasks/task-status/{task_id}")
+async def get_task_status(task_id: str):
+    from worker.celery_app import celery_app
+    import json
+
+    result = celery_app.AsyncResult(task_id)
+
+    if result.ready():
+        # Ensure the task status and result are JSON-serializable. If not,
+        # convert them to strings (this handles exceptions like NotRegistered).
+        status = str(result.status)
+        raw_result = result.result
+        try:
+            json.dumps(raw_result)
+            safe_result = raw_result
+        except (TypeError, ValueError):
+            safe_result = str(raw_result)
+
+        return JSONResponse(content={
+            "task_id": task_id,
+            "status": status,
+            "result": safe_result
+        })
+    else:
+        return JSONResponse(content={
+            "task_id": task_id,
+            "status": "pending"
+        })
 if __name__ == "__main__":
     import uvicorn 
     uvicorn.run(app, host="0.0.0.0", port=settings.PORT)

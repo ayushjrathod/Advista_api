@@ -14,6 +14,8 @@ celery_app = Celery(
   "worker",
   broker = REDIS_URL,
   backend = REDIS_URL,
+  # Ensure task modules are imported so the worker registers tasks like `process_data`
+  include=["worker.tasks"],
 )
 
 celery_app.conf.update(

@@ -2,11 +2,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from prisma import Prisma
 from src.utils.config import settings
 from src.services.firebase_service import firebase_service
 from src.services.email_service import email_service
-from src.services.database_service import db
+from src.repositories.user_repository import user_repository
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,8 +13,7 @@ logger = logging.getLogger(__name__)
 class AuthService:
     def __init__(self):
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        # Use shared Prisma client; assumes app connects at startup
-        self.prisma = db.prisma
+        self.user_repo = user_repository
     
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash"""
@@ -53,7 +51,7 @@ class AuthService:
         firebase_user = None
         try:
             # Check if user already exists
-            existing_user = await self.prisma.user.find_unique(where={"email": email})
+            existing_user = await self.user_repo.find_by_email(email)
             if existing_user:
                 raise ValueError("User with this email already exists")
             
@@ -65,17 +63,15 @@ class AuthService:
             
             # Generate verification code
             verification_code = email_service.generate_verification_code()
+            verification_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
             
             # Create user in database with Firebase UID
-            user = await self.prisma.user.create(
-                data={
-                    "email": email,
-                    "password": hashed_password,
-                    "firebaseUid": firebase_user["uid"],
-                    "verifyCode": verification_code,
-                    "verifyCodeExpiresAt": datetime.now(timezone.utc) + timedelta(minutes=10),
-                    "isVerified": False
-                }
+            user = await self.user_repo.create(
+                email=email,
+                hashed_password=hashed_password,
+                firebase_uid=firebase_user["uid"],
+                verification_code=verification_code,
+                verification_expires_at=verification_expires_at
             )
             
             # Send verification email (non-blocking)
@@ -111,7 +107,7 @@ class AuthService:
         """Authenticate user"""
         try:
             # Get user from database
-            user = await self.prisma.user.find_unique(where={"email": email})
+            user = await self.user_repo.find_by_email(email)
             if not user:
                 return None
             
@@ -143,7 +139,7 @@ class AuthService:
     async def verify_email(self, email: str, verification_code: str) -> bool:
         """Verify user email with code"""
         try:
-            user = await self.prisma.user.find_unique(where={"email": email})
+            user = await self.user_repo.find_by_email(email)
             if not user:
                 return False
             
@@ -154,14 +150,7 @@ class AuthService:
                 return False
             
             # Update user as verified
-            await self.prisma.user.update(
-                where={"email": email},
-                data={
-                    "isVerified": True,
-                    "verifyCode": None,
-                    "verifyCodeExpiresAt": None
-                }
-            )
+            await self.user_repo.update_verification_status(email, True)
             
             # Update Firebase user
             if user.firebaseUid:
@@ -176,21 +165,16 @@ class AuthService:
     async def forgot_password(self, email: str) -> bool:
         """Initiate forgot password process"""
         try:
-            user = await self.prisma.user.find_unique(where={"email": email})
+            user = await self.user_repo.find_by_email(email)
             if not user:
                 return False
             
             # Generate reset code
             reset_code = email_service.generate_verification_code()
+            reset_expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
             
             # Update user with reset code
-            await self.prisma.user.update(
-                where={"email": email},
-                data={
-                    "verifyCode": reset_code,
-                    "verifyCodeExpiresAt": datetime.now(timezone.utc) + timedelta(minutes=15)
-                }
-            )
+            await self.user_repo.update_verification_code(email, reset_code, reset_expires_at)
             
             # Send reset email (non-blocking)
             try:
@@ -207,7 +191,7 @@ class AuthService:
     async def reset_password(self, email: str, reset_code: str, new_password: str) -> bool:
         """Reset user password"""
         try:
-            user = await self.prisma.user.find_unique(where={"email": email})
+            user = await self.user_repo.find_by_email(email)
             if not user:
                 return False
             
@@ -221,14 +205,7 @@ class AuthService:
             hashed_password = self.get_password_hash(new_password)
             
             # Update user password
-            await self.prisma.user.update(
-                where={"email": email},
-                data={
-                    "password": hashed_password,
-                    "verifyCode": None,
-                    "verifyCodeExpiresAt": None
-                }
-            )
+            await self.user_repo.update_password(email, hashed_password)
             
             # Update Firebase password
             if user.firebaseUid:
@@ -252,7 +229,7 @@ class AuthService:
     async def resend_verification_code(self, email: str) -> bool:
         """Resend verification code to user email"""
         try:
-            user = await self.prisma.user.find_unique(where={"email": email})
+            user = await self.user_repo.find_by_email(email)
             if not user:
                 return False
             
@@ -262,15 +239,10 @@ class AuthService:
             
             # Generate new verification code
             verification_code = email_service.generate_verification_code()
+            verification_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
             
             # Update user with new verification code
-            await self.prisma.user.update(
-                where={"email": email},
-                data={
-                    "verifyCode": verification_code,
-                    "verifyCodeExpiresAt": datetime.now(timezone.utc) + timedelta(minutes=10)
-                }
-            )
+            await self.user_repo.update_verification_code(email, verification_code, verification_expires_at)
             
             # Send verification email (non-blocking)
             try:
