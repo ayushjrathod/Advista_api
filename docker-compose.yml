@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  redis:
+    image: "redis:alpine"
+    container_name: "celery_redis"
+    ports: 
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    worker:
+      build:
+        context: .
+        dockerfile: Dockerfile
+        container_name: "celery_worker"
+      command: ["celery", "-A", "tasks", "worker", "--loglevel=info"]
+      environment:
+        - REDIS_URL=redis://redis:6379/0
+      depends_on:
+        - redis
+      volumes:
+        - .:/app
+      restart: unless-stopped
+
+      advista_api:
+        build:
+          context: .
+          dockerfile: Dockerfile
+          container_name: "advista_api"
+        command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+        ports:
+          - "8000:8000"
+        environment:
+          - REDIS_URL=redis://redis:6379/0
+        depends_on:
+          - redis
+          - worker
+        volumes:
+          - .:/app
+        restart: unless-stopped
+
+        flower:
+          image: "mher/flower"
+          container_name: "celery_flower"
+          command: ["flower", "--broker=redis://redis:6379/0", "--port=5555"]
+          ports:
+            - "5555:5555"
+          depends_on:
+            - redis
+            - worker
+          restart: unless-stopped
+      
