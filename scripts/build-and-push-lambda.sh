@@ -30,8 +30,9 @@ cd "${API_DIR}"
 echo "Logging in to ECR..."
 ${AWS_CMD} ecr get-login-password --region "${REGION}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
-echo "Building image (Dockerfile.lambda)..."
-docker build -f Dockerfile.lambda -t "${ECR_REPO}:latest" .
+# Build for Lambda: single platform, no attestations (avoids InvalidImage / extra manifests)
+echo "Building image (Dockerfile.lambda) for linux/amd64 (Lambda compatibility)..."
+docker build --platform linux/amd64 --provenance=false --sbom=false -f Dockerfile.lambda -t "${ECR_REPO}:latest" .
 
 echo "Tagging for ECR..."
 docker tag "${ECR_REPO}:latest" "${IMAGE_URI}:latest"
