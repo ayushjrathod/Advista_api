@@ -1,0 +1,26 @@
+# AWS Lambda Python 3.13 base image (Amazon Linux 2023)
+FROM public.ecr.aws/lambda/python:3.13
+
+WORKDIR /var/task
+
+# Build deps for Python packages (bcrypt, cryptography) and for Prisma CLI (Node needs libatomic)
+RUN dnf install -y \
+    gcc \
+    python3-devel \
+    libffi-devel \
+    openssl-devel \
+    libatomic \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Copy project (includes .env so secrets are baked in; do not push image to public registries)
+COPY . .
+
+# Install app and deps, then generate Prisma client (Lambda adds /var/task to PYTHONPATH)
+RUN pip install --no-cache-dir . \
+    && python -m prisma generate
+
+# Handler: FastAPI via Mangum
+CMD ["lambda_handler.handler"]

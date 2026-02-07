@@ -1,13 +1,11 @@
+import asyncio
 import json
 import logging
-import asyncio
-from pydantic import BaseModel
+import os
 from typing import Optional
-import asyncio
-import json
-import logging
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from src.models.research_brief import ResearchBrief
 from src.models.research_insights import ProcessedSearchResults
 from src.services.research_service import research_service
@@ -16,10 +14,10 @@ from src.services.synthesis_service import synthesis_service
 from src.services.research_session_service import research_session_service
 from src.utils.config import settings
 from src.services.serpapi_service import run_serp_search_async
-from worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
-save_to_json = True
+# Disable by default for Lambda (ephemeral filesystem); set ENABLE_DEBUG_FILES=true locally
+save_to_json = os.environ.get("ENABLE_DEBUG_FILES", "false").lower() == "true"
 
 class StartResearchRequest(BaseModel):
     research_brief: ResearchBrief
@@ -70,58 +68,37 @@ async def start_research(request: StartResearchRequest):
             "platform": search_params.platform_specific_query,
         }
         
-        # Submit tasks to Celery
-        query_task_ids = {}
-        for query_type, query in query_mapping.items():
-            if not query:
-                logger.info(f"Skipping empty query for type: {query_type}")
-                continue
-            task_data = celery_app.send_task("serpapi_search", args=[query, query_type])
-            query_task_ids[query_type] = task_data.id
-            logger.info(f"Submitted SerpAPI search task for {query_type} with task ID: {task_data.id}")
-     
-        # save task_id to db and Update status to researching
-        await research_session_service.save_task_ids(
-            session_id,
-            query_task_ids
-        )
+        # Run SerpAPI searches concurrently (no Celery/Redis; Lambda-friendly)
         await research_session_service.update_status(session_id, 'researching')
-        # Poll for task completion and gather results
-        logger.info("Polling for SerpAPI search task completion...")
-        max_wait_time = 60
-        poll_interval = 2
-        elapsed_time = 0
+        logger.info("Running SerpAPI searches...")
+        
+        tasks = [
+            run_serp_search_async(query, query_type)
+            for query_type, query in query_mapping.items()
+            if query
+        ]
+        if not tasks:
+            await research_session_service.update_status(
+                session_id, 'failed', error_message="No search queries generated"
+            )
+            raise HTTPException(status_code=400, detail="No search queries generated from brief.")
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         
         successful_results = {}
-        pending_tasks = set(query_task_ids.keys())
-        
-        while pending_tasks and elapsed_time < max_wait_time:
-            await asyncio.sleep(poll_interval)
-            elapsed_time += poll_interval
-            
-            for query_type in list(pending_tasks):
-                task_id = query_task_ids[query_type]
-                result = celery_app.AsyncResult(task_id)
-                
-                if result.ready():
-                    if result.successful():
-                        task_result = result.result
-                        successful_results[task_result["query_type"]] = {
-                            "query": task_result["query"],
-                            "results": task_result["results"]
-                        }
-                        logger.info(f"Task {task_id} for {query_type} completed successfully")
-                        pending_tasks.remove(query_type)
-                    else:
-                        logger.error(f"Task {task_id} for {query_type} failed: {result.result}")
-                        pending_tasks.remove(query_type)
-            
-            if pending_tasks:
-                logger.debug(f"Still waiting for {len(pending_tasks)} tasks: {', '.join(pending_tasks)}")
-        
-        # Check for timeout or failures
-        if pending_tasks:
-            logger.warning(f"Timeout reached. Incomplete tasks: {', '.join(pending_tasks)}")
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"SerpAPI search failed: {result}")
+                continue
+            if isinstance(result, dict) and "error" in result:
+                logger.error(f"SerpAPI search error for {result.get('query_type', '?')}: {result['error']}")
+                continue
+            query_type = result.get("query_type")
+            successful_results[query_type] = {
+                "query": result["query"],
+                "results": result["results"],
+            }
+            logger.info(f"SerpAPI search completed for {query_type}")
         
         if not successful_results:
             await research_session_service.update_status(
