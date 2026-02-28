@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from src.models.research_insights import CategoryInsights, ProcessedSearchResults
+from src.services.analysis_service import analysis_service
 from src.utils.config import settings
 
 logger = logging.getLogger(__name__)
@@ -141,31 +142,35 @@ Use the research data provided to form your analysis - do not make up informatio
             research_brief: Optional original research brief for context
         """
         report = ResearchReport()
-        
+        youtube_context = analysis_service.get_youtube_context(processed_results) if processed_results.youtube_insights else ""
+        # TODO: remove after debugging
+        if youtube_context:
+            logger.info(f"[YT] Synthesis using youtube_context | len={len(youtube_context)} chars")
+
         # Synthesize each section
         if processed_results.product_insights:
             report.product_analysis = await self.synthesize_product(
-                processed_results.product_insights, research_brief
+                processed_results.product_insights, research_brief, youtube_context
             )
         
         if processed_results.competitor_insights:
             report.competitor_analysis = await self.synthesize_competitors(
-                processed_results.competitor_insights, research_brief
+                processed_results.competitor_insights, research_brief, youtube_context
             )
         
         if processed_results.audience_insights:
             report.audience_analysis = await self.synthesize_audience(
-                processed_results.audience_insights, research_brief
+                processed_results.audience_insights, research_brief, youtube_context
             )
         
         if processed_results.campaign_insights:
             report.campaign_recommendations = await self.synthesize_campaign(
-                processed_results.campaign_insights, research_brief
+                processed_results.campaign_insights, research_brief, youtube_context
             )
         
         if processed_results.platform_insights:
             report.platform_strategy = await self.synthesize_platform(
-                processed_results.platform_insights, research_brief
+                processed_results.platform_insights, research_brief, youtube_context
             )
         
         # Generate executive summary and action items
@@ -177,7 +182,8 @@ Use the research data provided to form your analysis - do not make up informatio
     async def synthesize_product(
         self, 
         insights: CategoryInsights,
-        research_brief: Optional[Dict[str, Any]] = None
+        research_brief: Optional[Dict[str, Any]] = None,
+        youtube_context: str = "",
     ) -> ProductAnalysis:
         """Synthesize product research insights"""
         
@@ -190,6 +196,7 @@ Use the research data provided to form your analysis - do not make up informatio
 
 RESEARCH DATA:
 {context}
+{youtube_context and f"\n{youtube_context}" or ""}
 
 Provide your analysis as a JSON object with these fields:
 - summary: A 2-3 sentence executive summary of the product
@@ -214,7 +221,8 @@ Respond ONLY with valid JSON, no additional text."""
     async def synthesize_competitors(
         self, 
         insights: CategoryInsights,
-        research_brief: Optional[Dict[str, Any]] = None
+        research_brief: Optional[Dict[str, Any]] = None,
+        youtube_context: str = "",
     ) -> CompetitorAnalysis:
         """Synthesize competitor research insights"""
         
@@ -227,6 +235,7 @@ Respond ONLY with valid JSON, no additional text."""
 
 RESEARCH DATA:
 {context}
+{youtube_context and f"\n{youtube_context}" or ""}
 
 Provide your analysis as a JSON object with these exact fields:
 - summary: A 2-3 sentence competitive landscape summary (string)
@@ -257,7 +266,8 @@ Respond ONLY with valid JSON, no additional text."""
     async def synthesize_audience(
         self, 
         insights: CategoryInsights,
-        research_brief: Optional[Dict[str, Any]] = None
+        research_brief: Optional[Dict[str, Any]] = None,
+        youtube_context: str = "",
     ) -> AudienceAnalysis:
         """Synthesize audience research insights"""
         
@@ -270,6 +280,7 @@ Respond ONLY with valid JSON, no additional text."""
 
 RESEARCH DATA:
 {context}
+{youtube_context and f"\n{youtube_context}" or ""}
 
 Provide your analysis as a JSON object with these fields:
 - summary: A 2-3 sentence summary of the target audience
@@ -295,7 +306,8 @@ Respond ONLY with valid JSON, no additional text."""
     async def synthesize_campaign(
         self, 
         insights: CategoryInsights,
-        research_brief: Optional[Dict[str, Any]] = None
+        research_brief: Optional[Dict[str, Any]] = None,
+        youtube_context: str = "",
     ) -> CampaignRecommendations:
         """Synthesize campaign strategy insights"""
         
@@ -308,6 +320,7 @@ Respond ONLY with valid JSON, no additional text."""
 
 RESEARCH DATA:
 {context}
+{youtube_context and f"\n{youtube_context}" or ""}
 
 Provide your recommendations as a JSON object with these fields:
 - summary: A 2-3 sentence campaign strategy summary
@@ -333,7 +346,8 @@ Respond ONLY with valid JSON, no additional text."""
     async def synthesize_platform(
         self, 
         insights: CategoryInsights,
-        research_brief: Optional[Dict[str, Any]] = None
+        research_brief: Optional[Dict[str, Any]] = None,
+        youtube_context: str = "",
     ) -> PlatformStrategy:
         """Synthesize platform-specific strategy insights"""
         
@@ -346,6 +360,7 @@ Respond ONLY with valid JSON, no additional text."""
 
 RESEARCH DATA:
 {context}
+{youtube_context and f"\n{youtube_context}" or ""}
 
 Provide your strategies as a JSON object with these exact fields:
 - summary: A 2-3 sentence platform strategy summary (string)

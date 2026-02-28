@@ -8,6 +8,9 @@ from src.models.research_insights import (
     OrganicResult,
     ProcessedSearchResults,
     RelatedQuestion,
+    YouTubeInsights,
+    YouTubeShortResult,
+    YouTubeVideoResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,8 +56,34 @@ class AnalysisService:
                     all_sources.update(insights.sources)
                     categories_processed += 1
                     logger.info(f"Processed {category_key}: {len(insights.top_results)} results, {len(insights.related_questions)} questions")
+                    # TODO: remove after debugging (audience/competitor use google_forums/Reddit)
+                    if category_key in ("audience", "competitor"):
+                        sources_preview = list(insights.sources)[:5]
+                        logger.info(f"[REDDIT/FORUMS] Processed category={category_key} | top_results={len(insights.top_results)} | sources_sample={sources_preview}")
                 except Exception as e:
                     logger.error(f"Error processing category {category_key}: {e}")
+
+        # Process YouTube results if present
+        if "youtube" in raw_results:
+            try:
+                youtube_data = raw_results["youtube"]
+                # TODO: remove after debugging
+                logger.info(f"[YT] Processing youtube_insights | videos={len(youtube_data.get('videos', []))} | shorts={len(youtube_data.get('shorts', []))}")
+                processed.youtube_insights = self._process_youtube(youtube_data)
+                for v in youtube_data.get("videos") or []:
+                    all_sources.add(v.get("channel") or "YouTube")
+                if youtube_data.get("shorts"):
+                    all_sources.add("YouTube Shorts")
+                categories_processed += 1
+                logger.info(
+                    f"Processed youtube: {len(processed.youtube_insights.videos)} videos, "
+                    f"{len(processed.youtube_insights.shorts)} shorts"
+                )
+                # TODO: remove after debugging
+                transcript_chars = sum(len(v.transcript) for v in processed.youtube_insights.videos) + sum(len(s.transcript) for s in processed.youtube_insights.shorts)
+                logger.info(f"[YT] youtube_insights ready | total_transcript_chars={transcript_chars}")
+            except Exception as e:
+                logger.error(f"Error processing YouTube data: {e}")
 
         processed.total_sources = len(all_sources)
         processed.processing_summary = {
@@ -64,6 +93,39 @@ class AnalysisService:
         }
 
         return processed
+
+    def _process_youtube(self, youtube_data: Dict[str, Any]) -> YouTubeInsights:
+        """Convert raw YouTube research data to YouTubeInsights."""
+        videos = [
+            YouTubeVideoResult(
+                title=v.get("title", ""),
+                link=v.get("link", ""),
+                channel=v.get("channel", ""),
+                published_date=v.get("published_date", ""),
+                views=v.get("views"),
+                length=v.get("length", ""),
+                description=v.get("description", ""),
+                video_id=v.get("video_id", ""),
+                transcript=v.get("transcript", ""),
+            )
+            for v in youtube_data.get("videos", [])
+        ]
+        shorts = [
+            YouTubeShortResult(
+                title=s.get("title", ""),
+                link=s.get("link", ""),
+                views=s.get("views"),
+                views_original=s.get("views_original", ""),
+                video_id=s.get("video_id", ""),
+                transcript=s.get("transcript", ""),
+            )
+            for s in youtube_data.get("shorts", [])
+        ]
+        return YouTubeInsights(
+            query=youtube_data.get("query", ""),
+            videos=videos,
+            shorts=shorts,
+        )
 
     def _process_category(self, category: str, category_data: Dict[str, Any]) -> CategoryInsights:
         """Process a single category's search results"""
@@ -103,13 +165,15 @@ class AnalysisService:
 
         for item in raw_organic[:self.max_organic_results]:
             try:
+                # Google Forums uses displayed_meta (e.g. "40+ comments · 14 years ago") instead of date
+                date = item.get("date") or item.get("displayed_meta")
                 result = OrganicResult(
                     position=item.get("position", 0),
                     title=item.get("title", ""),
                     link=item.get("link", ""),
                     snippet=item.get("snippet", ""),
                     source=item.get("source", ""),
-                    date=item.get("date"),
+                    date=date,
                 )
                 if result.title and result.link:  # Only add if has essential fields
                     organic_results.append(result)
@@ -256,6 +320,21 @@ class AnalysisService:
 
         return list(sources)
 
+    def get_youtube_context(self, processed: ProcessedSearchResults) -> str:
+        """Generate YouTube transcript context for synthesis."""
+        if not processed.youtube_insights:
+            return ""
+        parts = [f"\n## YOUTUBE RESEARCH\nQuery: {processed.youtube_insights.query}\n"]
+        for v in processed.youtube_insights.videos:
+            parts.append(f"\n### Video: {v.title} ({v.channel})")
+            if v.transcript:
+                parts.append(f"Transcript: {v.transcript[:2000]}{'...' if len(v.transcript) > 2000 else ''}")
+        for s in processed.youtube_insights.shorts:
+            parts.append(f"\n### Short: {s.title}")
+            if s.transcript:
+                parts.append(f"Transcript: {s.transcript[:1500]}{'...' if len(s.transcript) > 1500 else ''}")
+        return "\n".join(parts)
+
     def get_combined_context(self, processed: ProcessedSearchResults) -> str:
         """
         Generate a combined text context from all processed results.
@@ -295,6 +374,10 @@ class AnalysisService:
                     section += f"  Source: {result.source} | {result.link}\n\n"
 
             context_parts.append(section)
+
+        youtube_ctx = self.get_youtube_context(processed)
+        if youtube_ctx:
+            context_parts.append(youtube_ctx)
 
         return "\n".join(context_parts)
 

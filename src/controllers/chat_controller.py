@@ -8,7 +8,7 @@ from src.controllers.auth_controller import get_current_user
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+chat_router = APIRouter()
 
 class ChatStreamRequest(BaseModel):
     thread_id: str
@@ -19,7 +19,7 @@ class StartResearchRequest(BaseModel):
     research_brief: ResearchBrief
 
 
-@router.post("/stream")
+@chat_router.post("/stream")
 async def chat_stream(request: ChatStreamRequest):
     async def event_generator():
         async for chunk in chatbot_service.stream(request.thread_id, request.message):
@@ -28,13 +28,19 @@ async def chat_stream(request: ChatStreamRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@router.get("/research-brief/{thread_id}")
+@chat_router.get("/research-brief/{thread_id}")
 async def get_research_brief(thread_id: str):
     """Get the current research brief for a thread"""
-    brief = chatbot_service.get_research_brief(thread_id)
+    brief = chatbot_service.get_research_brief_for_thread(thread_id)
     return {
         "brief": brief.model_dump(),
         "completion_percentage": brief.get_completion_percentage(),
         "missing_fields": brief.get_missing_fields(),
         "is_complete": brief.is_complete()
     }
+
+@chat_router.post("/initialize-thread")
+@chat_router.get("/initialize-thread")
+async def initialize_thread():
+    thread_id = await chatbot_service.create_thread()
+    return {"thread_id": thread_id}

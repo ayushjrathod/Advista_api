@@ -62,4 +62,11 @@ class Settings(BaseSettings):
     GROQ_API_KEY5: str = ""
 
     SERPAPI_API_KEY: str = ""
+    
+    # Feature flags for Celery and Redis
+    # Set to False for Lambda (ephemeral filesystem, no background workers)
+    # Set to True for development/production with workers
+    ENABLE_CELERY: bool = False
+    ENABLE_REDIS: bool = False
+
 settings = Settings()

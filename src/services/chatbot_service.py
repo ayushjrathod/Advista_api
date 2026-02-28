@@ -1,4 +1,5 @@
 import logging
+import datetime
 from typing import Dict, Any, cast
 from src.utils.config import settings
 from src.models.research_brief import ResearchBrief
@@ -7,13 +8,16 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
+from src.services.database_service import db
+from src.repositories.chat_session_repository import chat_session_repository
+from src.repositories.research_session_repository import research_session_repository
+import uuid
 
 logger = logging.getLogger(__name__)
 
 
 class ChatbotService:
-    def __init__(self) -> None:
-
+    def __init__(self) -> None: 
         # Initialize chat model
         self.llm = init_chat_model(
             model_provider="groq",
@@ -38,6 +42,10 @@ class ChatbotService:
         self.memory = MemorySaver()
         self.app = workflow.compile(checkpointer=self.memory)
 
+        # Repository instances
+        self.chat_session_repo = chat_session_repository
+        self.research_session_repo = research_session_repository
+        
         # Thread-specific research briefs storage
         # thread_id: research_brief
         self.research_briefs: Dict[str, ResearchBrief] = {}
@@ -118,8 +126,9 @@ class ChatbotService:
                 """
             )
         )
+    
 
-    def get_config(self, thread_id: str) -> RunnableConfig:
+    def get_config_for_thread(self, thread_id: str) -> RunnableConfig:
         """
         Gets a thread-specific config.
         Initializes the thread with the system message if it's new.
@@ -135,7 +144,8 @@ class ChatbotService:
 
         return config
 
-    def get_research_brief(self, thread_id: str) -> ResearchBrief:
+
+    def get_research_brief_for_thread(self, thread_id: str) -> ResearchBrief:
         """Get the current research brief for a thread, initializing if not present"""
         if thread_id not in self.research_briefs:
             logger.info(f"Initializing new research brief cache for thread: {thread_id}")
@@ -157,7 +167,7 @@ class ChatbotService:
         # Check if conversation is empty
         if not conversation_history or conversation_history.strip() == "":
             logger.warning(f"Extraction skipped for {thread_id}: empty history")
-            return self.get_research_brief(thread_id) # Return existing brief
+            return self.get_research_brief_for_thread(thread_id) # Return existing brief
 
         extraction_prompt = (
             f"Extract any research brief information from this conversation. "
@@ -201,7 +211,7 @@ class ChatbotService:
         except Exception as e:
             logger.error(f"Extraction error for {thread_id}: {e}")
             # Return the last known brief on error to avoid data loss
-            return self.get_research_brief(thread_id)
+            return self.get_research_brief_for_thread(thread_id)
 
     def merge_briefs(self, existing: ResearchBrief, new: ResearchBrief) -> ResearchBrief:
         """
@@ -227,7 +237,7 @@ class ChatbotService:
         """Send a message and get a single, non-streamed response."""
         
         # Get config, which also handles thread initialization
-        config = self.get_config(thread_id)
+        config = self.get_config_for_thread(thread_id)
 
         # Only send the new user message
         inputs: MessagesState = {
@@ -248,7 +258,7 @@ class ChatbotService:
         """Stream chat response and extract structured data from full history"""
         
         # 1. Get config, which also handles thread initialization
-        config = self.get_config(thread_id)
+        config = self.get_config_for_thread(thread_id)
 
         # 2. Define inputs, only sending the new user message
         inputs: MessagesState = {
@@ -306,9 +316,27 @@ class ChatbotService:
             extracted_brief = await self.extract_information(thread_id, conversation_str)
 
             # 6. Merge newly extracted info with existing brief to avoid losing prior fields
-            current_brief = self.get_research_brief(thread_id)
+            current_brief = self.get_research_brief_for_thread(thread_id)
             updated_brief = self.merge_briefs(current_brief, extracted_brief)
             self.research_briefs[thread_id] = updated_brief
+
+            # updated chat session DB
+            if self.research_briefs[thread_id].is_complete() and db.is_connected():
+                session = await self.chat_session_repo.find_by_thread_id(thread_id)
+                if session and session.status != "brief_generated":
+                    await self.chat_session_repo.update_status(
+                        thread_id=thread_id,
+                        status="brief_generated",
+                        research_brief=self.research_briefs[thread_id].model_dump_json()
+                    )
+                    await self.research_session_repo.create(
+                        thread_id=thread_id,
+                        user_id=None,
+                        research_brief=self.research_briefs[thread_id].model_dump(),
+                        task_ids={},
+                        status="pending"
+                    )
+                    logger.info(f"Research brief updated in DB for thread {thread_id}")
 
             logger.info(f"Updated Brief for {thread_id}: {self.research_briefs[thread_id].model_dump_json(indent=2)}")
 
@@ -316,6 +344,26 @@ class ChatbotService:
             logger.error(f"Error updating research brief for {thread_id}: {e}")
             # The user has already received their response, so we just log this.
 
+    async def create_thread(self, user_id: str | None = None) -> str:
+        """Create and persist a new chat session (thread) and return its id.
 
-# Singleton service instance
+        Assumes DB is connected at app startup. Raises RuntimeError if DB isn't connected.
+        """
+        if not db.is_connected():
+            raise RuntimeError("Database not connected. Ensure application started and DB connected.")
+        
+        thread_id = str(uuid.uuid4())
+        now = datetime.datetime.now(datetime.timezone.utc)
+        
+        await self.chat_session_repo.create(
+            thread_id=thread_id,
+            user_id=user_id,
+            status="initialized",
+            last_activity=now,
+            expires_at=now + datetime.timedelta(days=7)
+        )
+        return thread_id
+
+
+# Singleton service instance / Singleton pattern
 chatbot_service = ChatbotService()

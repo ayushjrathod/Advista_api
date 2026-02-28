@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+auth_router = APIRouter()
 
 async def get_current_user(request: Request):
     """Get current authenticated user from HttpOnly cookie"""
@@ -31,13 +31,12 @@ async def get_current_user(request: Request):
         )
     return email
 
-@router.get("/check-email-unique", response_model=MessageResponse)
+@auth_router.get("/check-email-unique", response_model=MessageResponse)
 async def check_email_unique(email: str):
     """Check if email is unique"""
     if not email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is required")
     try:
-        await auth_service._ensure_prisma_connected()
         user = await auth_service.prisma.user.find_unique(where={"email": email})
         if user:
             return MessageResponse(message="Email is already taken", success=True)
@@ -47,7 +46,7 @@ async def check_email_unique(email: str):
         logger.error(f"Check email unique error: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
-@router.post("/signup", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@auth_router.post("/signup", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def signup(user_data: UserCreate):
     """Register a new user"""
     try:
@@ -77,7 +76,7 @@ async def signup(user_data: UserCreate):
             detail="Internal server error"
         )
 
-@router.post("/signin", response_model=MessageResponse)
+@auth_router.post("/signin", response_model=MessageResponse)
 async def signin(user_credentials: UserSignIn, response: Response):
     """Authenticate user and set HttpOnly cookie"""
     try:
@@ -123,7 +122,7 @@ async def signin(user_credentials: UserSignIn, response: Response):
             detail="Internal server error"
         )
 
-@router.post("/logout", response_model=MessageResponse)
+@auth_router.post("/logout", response_model=MessageResponse)
 async def logout(response: Response):
     """Logout user by clearing HttpOnly cookie"""
     response.delete_cookie(
@@ -138,7 +137,7 @@ async def logout(response: Response):
         success=True
     )
 
-@router.post("/verify-email", response_model=MessageResponse)
+@auth_router.post("/verify-email", response_model=MessageResponse)
 async def verify_email(verify_data: VerifyCodeRequest):
     """Verify user email with verification code"""
     try:
@@ -167,7 +166,7 @@ async def verify_email(verify_data: VerifyCodeRequest):
             detail="Internal server error"
         )
 
-@router.post("/forgot-password", response_model=MessageResponse)
+@auth_router.post("/forgot-password", response_model=MessageResponse)
 async def forgot_password(forgot_data: ForgotPasswordRequest):
     """Send password reset code to user email"""
     try:
@@ -193,7 +192,7 @@ async def forgot_password(forgot_data: ForgotPasswordRequest):
             detail="Internal server error"
         )
 
-@router.post("/reset-password", response_model=MessageResponse)
+@auth_router.post("/reset-password", response_model=MessageResponse)
 async def reset_password(reset_data: ResetPasswordRequest):
     """Reset user password with reset code"""
     try:
@@ -230,7 +229,7 @@ async def reset_password(reset_data: ResetPasswordRequest):
             detail="Internal server error"
         )
 
-@router.post("/resend-verification", response_model=MessageResponse)
+@auth_router.post("/resend-verification", response_model=MessageResponse)
 async def resend_verification_code(request_data: ForgotPasswordRequest):
     """Resend verification code to user email"""
     try:
@@ -256,11 +255,10 @@ async def resend_verification_code(request_data: ForgotPasswordRequest):
             detail="Internal server error"
         )
 
-@router.get("/me", response_model=UserResponse)
+@auth_router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: str = Depends(get_current_user)):
     """Get current user information"""
     try:
-        await auth_service._ensure_prisma_connected()
         user = await auth_service.prisma.user.find_unique(where={"email": current_user})
         
         if not user:
@@ -285,4 +283,3 @@ async def get_current_user_info(current_user: str = Depends(get_current_user)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
-

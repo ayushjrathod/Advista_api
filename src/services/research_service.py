@@ -1,22 +1,13 @@
-import asyncio
 import logging
-from typing import Any, Dict, List
-
-from serpapi import GoogleSearch
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
 
 from src.models.research_brief import ResearchBrief
 from src.models.search_params import SearchParams
-from src.models.search_results import (
-    ResearchExecutionResult,
-    SearchQueryResult,
-    SearchResultsCollection,
-)
 from src.utils.config import settings
+from src.repositories.research_session_repository import research_session_repository
 logger = logging.getLogger(__name__)
-
 
 class ResearchService:
     def __init__(self):
@@ -29,8 +20,9 @@ class ResearchService:
         
         # Initialize structured output LLM for search params extraction
         self.params_extractor_llm = self.llm.with_structured_output(SearchParams)
+        self.repo = research_session_repository
 
-    async def create_research_query(self, research_brief: ResearchBrief) -> SearchParams:
+    async def create_research_query(self, research_brief: ResearchBrief, threadId: str) -> SearchParams:
 
         # Create prompt for extracting search queries
         brief_summary = f"""
@@ -68,9 +60,20 @@ class ResearchService:
         """
         
         try:
-            return await self.params_extractor_llm.ainvoke([
+            search_params_results = await self.params_extractor_llm.ainvoke([
                 HumanMessage(content=extraction_prompt)
             ])
+            
+            # Find the active session for this thread
+            active_session = await self.repo.find_by_thread_id(threadId)
+            
+            if active_session:
+                await self.repo.update_search_params(
+                    session_id=active_session.id,
+                    search_params=search_params_results.model_dump() if search_params_results else {}
+                )
+            
+            return search_params_results
         except Exception as e:
             logger.error(f"Error generating search params: {e}")
             return SearchParams()

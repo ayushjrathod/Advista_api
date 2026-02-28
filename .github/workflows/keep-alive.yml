@@ -1,0 +1,27 @@
+# Keeps Supabase DB awake by pinging /api/v1/keep-alive every 6 days.
+name: Keep Supabase DB Alive
+
+on:
+  schedule:
+    # Run at 00:00 UTC every 6 days (1st, 7th, 13th, 19th, 25th of each month)
+    - cron: '0 0 */6 * *'
+  workflow_dispatch:  # Allow manual trigger from Actions tab
+
+jobs:
+  ping:
+    name: Ping database keep-alive endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call keep-alive endpoint
+        run: |
+          res=$(curl -s -w "\n%{http_code}" "https://advista.ayushjrathod.live/api/v1/keep-alive")
+          body=$(echo "$res" | head -n -1)
+          status=$(echo "$res" | tail -n 1)
+          echo "Response ($status): $body"
+          if [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
+            echo "Keep-alive successful"
+            exit 0
+          else
+            echo "Keep-alive failed with status $status"
+            exit 1
+          fi
