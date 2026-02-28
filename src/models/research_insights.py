@@ -42,6 +42,36 @@ class CategoryInsights(BaseModel):
     sources: List[str] = Field(default_factory=list, description="Unique source domains")
 
 
+class YouTubeVideoResult(BaseModel):
+    """A YouTube video with transcript"""
+    title: str = Field(default="", description="Video title")
+    link: str = Field(default="", description="Video URL")
+    channel: str = Field(default="", description="Channel name")
+    published_date: str = Field(default="", description="Publication date")
+    views: Optional[int] = Field(default=None, description="View count")
+    length: str = Field(default="", description="Duration")
+    description: str = Field(default="", description="Video description")
+    video_id: str = Field(default="", description="YouTube video ID")
+    transcript: str = Field(default="", description="Extracted transcript text")
+
+
+class YouTubeShortResult(BaseModel):
+    """A YouTube Short with transcript"""
+    title: str = Field(default="", description="Short title")
+    link: str = Field(default="", description="Short URL")
+    views: Optional[int] = Field(default=None, description="View count")
+    views_original: str = Field(default="", description="Views as displayed")
+    video_id: str = Field(default="", description="YouTube video ID")
+    transcript: str = Field(default="", description="Extracted transcript text")
+
+
+class YouTubeInsights(BaseModel):
+    """YouTube research: top videos and shorts with transcripts"""
+    query: str = Field(default="", description="Search query used")
+    videos: List[YouTubeVideoResult] = Field(default_factory=list, description="Top 3 videos with transcripts")
+    shorts: List[YouTubeShortResult] = Field(default_factory=list, description="Top 5 shorts with transcripts")
+
+
 class ProcessedSearchResults(BaseModel):
     """Complete processed search results across all categories"""
     product_insights: Optional[CategoryInsights] = Field(default=None)
@@ -49,6 +79,7 @@ class ProcessedSearchResults(BaseModel):
     audience_insights: Optional[CategoryInsights] = Field(default=None)
     campaign_insights: Optional[CategoryInsights] = Field(default=None)
     platform_insights: Optional[CategoryInsights] = Field(default=None)
+    youtube_insights: Optional[YouTubeInsights] = Field(default=None, description="YouTube videos and shorts with transcripts")
     
     # Metadata
     total_sources: int = Field(default=0, description="Total unique sources across all categories")

@@ -39,8 +39,8 @@ async def get_research_brief(thread_id: str):
         "is_complete": brief.is_complete()
     }
 
-@chat_router.post("/initilize-thread")
-@chat_router.get("/initilize-thread")
-async def initilize_thread():
+@chat_router.post("/initialize-thread")
+@chat_router.get("/initialize-thread")
+async def initialize_thread():
     thread_id = await chatbot_service.create_thread()
     return {"thread_id": thread_id}

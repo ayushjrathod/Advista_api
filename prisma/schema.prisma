@@ -48,6 +48,7 @@ model ResearchSession {
   searchResults    Json?
   processedResults Json?
   report           Json?
+  resourcesUsed    Json?
   meta             Json?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt

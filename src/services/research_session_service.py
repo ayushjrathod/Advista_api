@@ -121,6 +121,26 @@ class ResearchSessionService:
         except Exception as e:
             logger.error(f"Error saving report: {e}")
             raise
+
+    async def save_resources_used(
+        self,
+        session_id: str,
+        resources_used: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Save resources used to database"""
+        try:
+            if not db.is_connected():
+                await db.connect()
+            
+            session = await self.research_repo.update_resources_used(
+                session_id=session_id,
+                resources_used=resources_used
+            )
+            logger.info(f"Saved resources used for session {session_id}")
+            return session.model_dump()
+        except Exception as e:
+            logger.error(f"Error saving resources used: {e}")
+            raise
     
     async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get research session by ID"""

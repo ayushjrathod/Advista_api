@@ -169,6 +169,25 @@ class ResearchSessionRepository:
         except Exception as e:
             logger.error(f"Error updating report: {e}")
             raise
+
+    async def update_resources_used(
+        self,
+        session_id: str,
+        resources_used: Dict[str, Any]
+    ) -> dict:
+        """Update resources used (sources, links, YouTube data for Resources tab)"""
+        try:
+            session = await self.prisma.researchsession.update(
+                where={'id': session_id},
+                data={
+                    'resourcesUsed': Json(resources_used) if resources_used is not None else None,
+                    'updatedAt': datetime.utcnow(),
+                }
+            )
+            return session
+        except Exception as e:
+            logger.error(f"Error updating resources used: {e}")
+            raise
     
     async def update_task_ids(
         self,
