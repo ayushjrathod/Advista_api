@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Call keep-alive endpoint
         run: |
-          res=$(curl -s -w "\n%{http_code}" "https://advista.ayushjrathod.live/api/v1/keep-alive")
+          res=$(curl -s -w "\n%{http_code}" "https://bkgaafqnbqd4mhq3ikb45lerc40bhtqd.lambda-url.ap-south-1.on.aws/api/v1/keep-alive")
           body=$(echo "$res" | head -n -1)
           status=$(echo "$res" | tail -n 1)
           echo "Response ($status): $body"
