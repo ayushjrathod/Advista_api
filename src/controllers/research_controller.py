@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from src.models.research_brief import ResearchBrief
 from src.models.research_insights import ProcessedSearchResults
@@ -16,6 +16,7 @@ from src.services.database_service import db
 from src.utils.config import settings
 from src.services.serpapi_service import run_serp_search_async
 from src.services.youtube_service import run_youtube_research_async
+from src.controllers.auth_controller import UNAUTHENTICATED_MESSAGE, get_optional_user
 
 logger = logging.getLogger(__name__)
 # Disable by default for Lambda (ephemeral filesystem); set ENABLE_DEBUG_FILES=true locally
@@ -24,17 +25,16 @@ save_to_json = os.environ.get("ENABLE_DEBUG_FILES", "false").lower() == "true"
 class StartResearchRequest(BaseModel):
     research_brief: ResearchBrief
     threadId: str
-    userId: Optional[str] = None
 
 research_router = APIRouter()
 
 # Category labels for resources display
 RESOURCE_SOURCE_FOR_CATEGORY = {
-    "audience": "reddit_forums",
-    "competitor": "reddit_forums",
-    "product": "google",
-    "campaign": "google",
-    "platform": "google",
+    "customer_sentiment": "reddit_forums",
+    "competitor_landscape": "reddit_forums",
+    "company_product": "google",
+    "strategic_gap": "google",
+    "battlecard": "google",
 }
 
 
@@ -83,7 +83,7 @@ def _build_resources_used(processed_results, source_for_category):
 
 
 @research_router.post("/start-research")
-async def start_research(request: StartResearchRequest):
+async def start_research(request: StartResearchRequest, current_user = Depends(get_optional_user)):
     """
     Endpoint to start research with the completed brief.
     This will be called by the frontend after user confirms the brief.
@@ -100,7 +100,13 @@ async def start_research(request: StartResearchRequest):
         
         # Create research session in database
         logger.info(f"Starting research for thread {request.threadId}")
-        user_id = request.userId if request.userId else None
+        chat_session = await db.prisma.chatsession.find_unique(where={"threadId": request.threadId})
+        if not chat_session:
+            raise HTTPException(status_code=404, detail="Chat thread not found")
+        if chat_session.userId and current_user and chat_session.userId != current_user.id:
+            raise HTTPException(status_code=403, detail="You do not have access to this thread")
+
+        user_id = current_user.id if current_user else chat_session.userId
         session = await research_session_service.create_session(
             thread_id=request.threadId,
             user_id=user_id,
@@ -117,20 +123,20 @@ async def start_research(request: StartResearchRequest):
         
         # Define query types and their corresponding queries
         query_mapping = {
-            "product": search_params.product_search_query,
-            "competitor": search_params.competitor_search_query,
-            "audience": search_params.audience_insight_query,
-            "campaign": search_params.campaign_strategy_query,
-            "platform": search_params.platform_specific_query,
+            "company_product": search_params.company_product_query,
+            "competitor_landscape": search_params.competitor_landscape_query,
+            "customer_sentiment": search_params.customer_sentiment_query,
+            "strategic_gap": search_params.strategic_gap_query,
+            "battlecard": search_params.battlecard_query,
         }
 
         # Per-query engine mapping: audience & competitor use forums for sentiment; others use general search
         ENGINE_FOR_QUERY_TYPE = {
-            "audience": "google_forums",
-            "competitor": "google_forums",
-            "product": "google",
-            "campaign": "google",
-            "platform": "google",
+            "customer_sentiment": "google_forums",
+            "competitor_landscape": "google_forums",
+            "company_product": "google",
+            "strategic_gap": "google",
+            "battlecard": "google",
         }
         # TODO: remove after debugging
         forum_types = [qt for qt, eng in ENGINE_FOR_QUERY_TYPE.items() if eng == "google_forums"]
@@ -242,9 +248,9 @@ async def start_research(request: StartResearchRequest):
             )
 
         # Run YouTube research: top 3 videos + top 5 shorts with transcripts
-        youtube_query = request.research_brief.product_name or search_params.product_search_query or "advertising"
+        youtube_query = request.research_brief.company_name or search_params.company_product_query or "competitive intelligence"
         # TODO: remove after debugging
-        logger.info(f"[YT] Starting YouTube research | session_id={session_id} | query={youtube_query} | product_name={request.research_brief.product_name}")
+        logger.info(f"[YT] Starting YouTube research | session_id={session_id} | query={youtube_query} | company_name={request.research_brief.company_name}")
         try:
             logger.info(f"Running YouTube research for: {youtube_query}")
             youtube_results = await run_youtube_research_async(youtube_query)
@@ -387,8 +393,45 @@ async def get_processed_results():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@research_router.get("/sessions")
+async def get_research_sessions(current_user = Depends(get_optional_user)):
+    """Get all research sessions for the current user, newest first."""
+    try:
+        if not current_user:
+            return {
+                "status": "success",
+                "authenticated": False,
+                "message": UNAUTHENTICATED_MESSAGE,
+                "sessions": [],
+            }
+
+        if not db.is_connected():
+            await db.connect()
+        sessions = await db.prisma.researchsession.find_many(
+            where={"userId": current_user.id},
+            order={"createdAt": "desc"},
+        )
+        return {
+            "status": "success",
+            "authenticated": True,
+            "sessions": [
+                {
+                    "id": s.id,
+                    "status": s.status,
+                    "createdAt": s.createdAt.isoformat() if s.createdAt else None,
+                    "completedAt": s.completedAt.isoformat() if s.completedAt else None,
+                    "researchBrief": s.researchBrief,
+                }
+                for s in sessions
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error fetching research sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @research_router.get("/report")
-async def get_research_report(session_id: Optional[str] = None):
+async def get_research_report(session_id: Optional[str] = None, current_user = Depends(get_optional_user)):
     """
     Get the synthesized research report. When session_id is provided, fetches from DB.
     When omitted, tries file fallback (local dev) or latest completed session from DB.
@@ -401,6 +444,11 @@ async def get_research_report(session_id: Optional[str] = None):
                     status_code=404,
                     detail="Research session not found."
                 )
+            if current_user and session.get("userId") and session.get("userId") != current_user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You do not have access to this report."
+                )
             report_data = session.get("report")
             resources_used = session.get("resourcesUsed")
             if not report_data:
@@ -410,33 +458,32 @@ async def get_research_report(session_id: Optional[str] = None):
                 )
             return {
                 "status": "success",
+                "authenticated": bool(current_user),
+                "message": None if current_user else UNAUTHENTICATED_MESSAGE,
                 "report": report_data,
                 "resources_used": resources_used
             }
 
-        # Fallback: try local file (dev) or latest completed session from DB
-        try:
-            with open("research_report.json", "r") as f:
-                report = json.load(f)
+        if not current_user:
             return {
                 "status": "success",
-                "report": report,
-                "resources_used": None
+                "authenticated": False,
+                "message": UNAUTHENTICATED_MESSAGE,
+                "report": None,
+                "resources_used": None,
             }
-        except FileNotFoundError:
-            pass
 
-        # No file: try to get latest completed session from DB
         if not db.is_connected():
             await db.connect()
         session = await db.prisma.researchsession.find_first(
-            where={"status": "completed"},
+            where={"status": "completed", "userId": current_user.id},
             order={"completedAt": "desc"}
         )
         if session:
             session_dict = session.model_dump()
             return {
                 "status": "success",
+                "authenticated": True,
                 "report": session_dict.get("report"),
                 "resources_used": session_dict.get("resourcesUsed")
             }

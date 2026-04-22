@@ -25,6 +25,12 @@ class UserResponse(UserBase):
         }
 
 
+class AuthStateResponse(BaseModel):
+    authenticated: bool
+    message: str
+    user: Optional[UserResponse] = None
+
+
 class UserSignIn(BaseModel):
     email: EmailStr
     password: str

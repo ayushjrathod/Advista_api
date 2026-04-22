@@ -1,5 +1,6 @@
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
+from firebase_admin._auth_utils import UserNotFoundError
 from src.utils.config import settings
 import logging
 
@@ -56,6 +57,26 @@ class FirebaseService:
             }
         except Exception as e:
             logger.error(f"Failed to create Firebase user: {str(e)}")
+            raise e
+
+    def verify_id_token(self, token: str) -> dict:
+        """Verify a Firebase ID token and return its claims."""
+        try:
+            self._ensure_initialized()
+            return firebase_auth.verify_id_token(token)
+        except Exception as e:
+            logger.error(f"Failed to verify Firebase ID token: {str(e)}")
+            raise e
+
+    def get_user_by_email(self, email: str):
+        """Get a Firebase user by email if it exists."""
+        try:
+            self._ensure_initialized()
+            return firebase_auth.get_user_by_email(email)
+        except UserNotFoundError:
+            return None
+        except Exception as e:
+            logger.error(f"Failed to fetch Firebase user by email: {str(e)}")
             raise e
     
     def verify_user_email(self, uid: str) -> bool:

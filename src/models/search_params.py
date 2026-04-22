@@ -4,27 +4,27 @@ from typing import ClassVar, Dict, Iterable, List, Tuple
 
 class SearchParams(BaseModel):
     """Search parameters generated from research brief for SerpAPI queries"""
-    product_search_query: str = Field(
+    company_product_query: str = Field(
         default="",
-        description="Search queries to gather information about the product/service, market positioning, and features"
+        description="Search query to research the company's product, market positioning, and capabilities"
     )
-    competitor_search_query: str = Field(
+    competitor_landscape_query: str = Field(
         default="",
-        description="Search queries to analyze competitors, their strategies, pricing, and market presence"
+        description="Search query to research competitor strengths, weaknesses, and recent moves"
     )
-    audience_insight_query: str = Field(
+    customer_sentiment_query: str = Field(
         default="",
-        description="Search queries to understand target audience behavior, preferences, demographics, and interests"
+        description="Search query to research what customers say about this space (forums, Reddit, reviews)"
     )
-    campaign_strategy_query: str = Field(
+    strategic_gap_query: str = Field(
         default="",
-        description="Search queries to find best practices, case studies, and strategies for similar campaigns"
+        description="Search query to research market gaps, unmet needs, and whitespace in the competitive landscape"
     )
-    platform_specific_query: str = Field(
+    battlecard_query: str = Field(
         default="",
-        description="Search queries specific to preferred advertising platforms (Google Ads, Facebook, etc.)"
+        description="Search query to research how competitors position against each other on primary channels"
     )
 
     def get_all_queries(self) -> List[str]:
         """Get all search queries as a list"""
-        return [self.product_search_query, self.competitor_search_query, self.audience_insight_query, self.campaign_strategy_query, self.platform_specific_query]
+        return [self.company_product_query, self.competitor_landscape_query, self.customer_sentiment_query, self.strategic_gap_query, self.battlecard_query]

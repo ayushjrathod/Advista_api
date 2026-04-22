@@ -28,7 +28,7 @@ class AIOverview(BaseModel):
 
 class CategoryInsights(BaseModel):
     """Processed insights for a single search category"""
-    category: str = Field(default="", description="Category name (product, competitor, etc.)")
+    category: str = Field(default="", description="Category name (company_product, competitor_landscape, etc.)")
     query: str = Field(default="", description="Original search query")
     total_results: int = Field(default=0, description="Total results found")
     
@@ -74,11 +74,11 @@ class YouTubeInsights(BaseModel):
 
 class ProcessedSearchResults(BaseModel):
     """Complete processed search results across all categories"""
-    product_insights: Optional[CategoryInsights] = Field(default=None)
+    company_product_insights: Optional[CategoryInsights] = Field(default=None)
     competitor_insights: Optional[CategoryInsights] = Field(default=None)
-    audience_insights: Optional[CategoryInsights] = Field(default=None)
-    campaign_insights: Optional[CategoryInsights] = Field(default=None)
-    platform_insights: Optional[CategoryInsights] = Field(default=None)
+    customer_sentiment_insights: Optional[CategoryInsights] = Field(default=None)
+    strategic_gap_insights: Optional[CategoryInsights] = Field(default=None)
+    battlecard_insights: Optional[CategoryInsights] = Field(default=None)
     youtube_insights: Optional[YouTubeInsights] = Field(default=None, description="YouTube videos and shorts with transcripts")
     
     # Metadata
@@ -88,16 +88,16 @@ class ProcessedSearchResults(BaseModel):
     def get_all_insights(self) -> List[CategoryInsights]:
         """Get all non-null category insights as a list"""
         insights = []
-        if self.product_insights:
-            insights.append(self.product_insights)
+        if self.company_product_insights:
+            insights.append(self.company_product_insights)
         if self.competitor_insights:
             insights.append(self.competitor_insights)
-        if self.audience_insights:
-            insights.append(self.audience_insights)
-        if self.campaign_insights:
-            insights.append(self.campaign_insights)
-        if self.platform_insights:
-            insights.append(self.platform_insights)
+        if self.customer_sentiment_insights:
+            insights.append(self.customer_sentiment_insights)
+        if self.strategic_gap_insights:
+            insights.append(self.strategic_gap_insights)
+        if self.battlecard_insights:
+            insights.append(self.battlecard_insights)
         return insights
 
     def get_all_sources(self) -> List[str]:

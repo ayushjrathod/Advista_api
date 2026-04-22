@@ -40,11 +40,11 @@ class AnalysisService:
 
         # Map category names to ProcessedSearchResults attributes
         category_mapping = {
-            "product": "product_insights",
-            "competitor": "competitor_insights",
-            "audience": "audience_insights",
-            "campaign": "campaign_insights",
-            "platform": "platform_insights",
+            "company_product": "company_product_insights",
+            "competitor_landscape": "competitor_insights",
+            "customer_sentiment": "customer_sentiment_insights",
+            "strategic_gap": "strategic_gap_insights",
+            "battlecard": "battlecard_insights",
         }
 
         for category_key, attr_name in category_mapping.items():
@@ -57,7 +57,7 @@ class AnalysisService:
                     categories_processed += 1
                     logger.info(f"Processed {category_key}: {len(insights.top_results)} results, {len(insights.related_questions)} questions")
                     # TODO: remove after debugging (audience/competitor use google_forums/Reddit)
-                    if category_key in ("audience", "competitor"):
+                    if category_key in ("customer_sentiment", "competitor_landscape"):
                         sources_preview = list(insights.sources)[:5]
                         logger.info(f"[REDDIT/FORUMS] Processed category={category_key} | top_results={len(insights.top_results)} | sources_sample={sources_preview}")
                 except Exception as e:

@@ -20,6 +20,15 @@ class UserRepository:
         except Exception as e:
             logger.error(f"Error finding user by email: {e}")
             raise
+
+    async def find_by_firebase_uid(self, firebase_uid: str) -> Optional[dict]:
+        """Find user by Firebase UID"""
+        try:
+            user = await self.prisma.user.find_unique(where={"firebaseUid": firebase_uid})
+            return user
+        except Exception as e:
+            logger.error(f"Error finding user by Firebase UID: {e}")
+            raise
     
     async def find_by_id(self, user_id: str) -> Optional[dict]:
         """Find user by ID"""
@@ -33,26 +42,44 @@ class UserRepository:
     async def create(
         self,
         email: str,
-        hashed_password: str,
         firebase_uid: str,
-        verification_code: str,
-        verification_expires_at: datetime
+        is_verified: bool
     ) -> dict:
         """Create a new user"""
         try:
             user = await self.prisma.user.create(
                 data={
                     "email": email,
-                    "password": hashed_password,
+                    "password": "",
                     "firebaseUid": firebase_uid,
-                    "verifyCode": verification_code,
-                    "verifyCodeExpiresAt": verification_expires_at,
-                    "isVerified": False
+                    "isVerified": is_verified
                 }
             )
             return user
         except Exception as e:
             logger.error(f"Error creating user: {e}")
+            raise
+
+    async def update_from_firebase(
+        self,
+        user_id: str,
+        email: str,
+        firebase_uid: str,
+        is_verified: bool
+    ) -> dict:
+        """Update local user profile from Firebase claims."""
+        try:
+            user = await self.prisma.user.update(
+                where={"id": user_id},
+                data={
+                    "email": email,
+                    "firebaseUid": firebase_uid,
+                    "isVerified": is_verified,
+                }
+            )
+            return user
+        except Exception as e:
+            logger.error(f"Error updating user from Firebase: {e}")
             raise
     
     async def update_verification_status(self, email: str, is_verified: bool) -> dict:
