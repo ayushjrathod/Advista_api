@@ -1,5 +1,4 @@
 import logging
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,16 +11,10 @@ from src.services.database_service import db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def _is_lambda() -> bool:
-    return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
-
-
 async def lifespan(app: FastAPI):
     await db.connect()
     yield
-    # In Lambda, reuse connection across warm invocations; don't disconnect
-    if not _is_lambda():
-        await db.disconnect()
+    await db.disconnect()
 
 app = FastAPI(
     title = "Advista",
