@@ -22,6 +22,6 @@ COPY . .
 # Generate Prisma client and fetch query engine binary into image
 RUN python -m prisma generate && python -m prisma py fetch
 
-EXPOSE 8000
+EXPOSE 8080
 
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}

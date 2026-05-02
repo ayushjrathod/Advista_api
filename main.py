@@ -12,9 +12,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def lifespan(app: FastAPI):
-    await db.connect()
+    try:
+        await db.connect()
+    except Exception as exc:
+        logger.warning("Database unavailable during startup; continuing without an active DB connection: %s", exc)
     yield
-    await db.disconnect()
+    try:
+        await db.disconnect()
+    except Exception as exc:
+        logger.warning("Database disconnect during shutdown failed: %s", exc)
 
 app = FastAPI(
     title = "Advista",
@@ -74,7 +80,15 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return JSONResponse(content={"status": "ok", "message": "Advista API is healthy"}, status_code=200)
+    db_connected = db.is_connected()
+    return JSONResponse(
+        content={
+            "status": "ok" if db_connected else "degraded",
+            "message": "Advista API is healthy" if db_connected else "Advista API is running without a database connection",
+            "database_connected": db_connected,
+        },
+        status_code=200,
+    )
 
 
 @app.get("/api/v1/keep-alive")
