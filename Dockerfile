@@ -4,25 +4,23 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PRISMA_BINARY_CACHE_DIR=/app
 
 RUN apt-get update \
-    && apt-get install -y build-essential --no-install-recommends \
+    && apt-get install -y build-essential openssl --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Ensure pip and build tools are up-to-date
-RUN pip install --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Copy dependency manifests first for better layer caching
 COPY pyproject.toml uv.lock ./
 
-# Install the project and dependencies (editable mode for development)
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir .
 
-# Copy the rest of the application
 COPY . .
 
-# Run Prisma generation only if the Prisma CLI is available in the image
-RUN if command -v prisma >/dev/null 2>&1; then prisma generate; else echo "prisma CLI not found, skipping prisma generate"; fi
+# Generate Prisma client and fetch query engine binary into image
+RUN python -m prisma generate && python -m prisma py fetch
 
 EXPOSE 8000
 
