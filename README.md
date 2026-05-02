@@ -158,6 +158,11 @@ When enabled, research intermediates are written to `search_results.json`, `proc
 
 ## Local setup
 
+## Cloud Run startup note
+
+When deploying to Cloud Run, the container must bind to `0.0.0.0:$PORT` quickly.
+This service now starts even if the database is temporarily unavailable, and reports DB state via `/health` instead of failing container startup.
+
 ### 1. Install dependencies
 
 ```bash
