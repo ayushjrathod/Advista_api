@@ -9,8 +9,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from src.services.database_service import db
-from src.repositories.chat_session_repository import chat_session_repository
-from src.repositories.research_session_repository import research_session_repository
+from prisma import Json
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -23,10 +22,6 @@ class ChatbotService:
         self.memory = None
         self.app = None
 
-        # Repository instances
-        self.chat_session_repo = chat_session_repository
-        self.research_session_repo = research_session_repository
-        
         # Thread-specific research briefs storage
         # thread_id: research_brief
         self.research_briefs: Dict[str, ResearchBrief] = {}
@@ -308,19 +303,20 @@ class ChatbotService:
 
             # updated chat session DB
             if self.research_briefs[thread_id].is_complete() and db.is_connected():
-                session = await self.chat_session_repo.find_by_thread_id(thread_id)
+                session = await db.prisma.chatsession.find_unique(where={"threadId": thread_id})
                 if session and session.status != "brief_generated":
-                    await self.chat_session_repo.update_status(
-                        thread_id=thread_id,
-                        status="brief_generated",
-                        research_brief=self.research_briefs[thread_id].model_dump_json()
+                    await db.prisma.chatsession.update(
+                        where={"threadId": thread_id},
+                        data={"status": "brief_generated", "researchBrief": self.research_briefs[thread_id].model_dump_json()}
                     )
-                    await self.research_session_repo.create(
-                        thread_id=thread_id,
-                        user_id=None,
-                        research_brief=self.research_briefs[thread_id].model_dump(),
-                        task_ids={},
-                        status="pending"
+                    await db.prisma.researchsession.create(
+                        data={
+                            'userId': None,
+                            'status': 'pending',
+                            'researchBrief': Json(self.research_briefs[thread_id].model_dump()),
+                            'taskIds': Json({}),
+                            'chatSession': {'connect': {'threadId': thread_id}},
+                        }
                     )
                     logger.info(f"Research brief updated in DB for thread {thread_id}")
 
@@ -341,12 +337,14 @@ class ChatbotService:
         thread_id = str(uuid.uuid4())
         now = datetime.datetime.now(datetime.timezone.utc)
         
-        await self.chat_session_repo.create(
-            thread_id=thread_id,
-            user_id=user_id,
-            status="initialized",
-            last_activity=now,
-            expires_at=now + datetime.timedelta(days=7)
+        await db.prisma.chatsession.create(
+            data={
+                "threadId": thread_id,
+                "userId": user_id,
+                "status": "initialized",
+                "lastActivity": now,
+                "expiresAt": now + datetime.timedelta(days=7),
+            }
         )
         return thread_id
 

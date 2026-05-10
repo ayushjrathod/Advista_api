@@ -55,17 +55,8 @@ class SerpApiService:
         if start is not None:
             serp_params["start"] = start
 
-        # TODO: remove after debugging
-        if engine == "google_forums":
-            logger.info(f"[REDDIT/FORUMS] Starting search | query_type={query_type} | query={query[:80]}...")
         search = GoogleSearch(serp_params)
         results = search.get_dict()
-        # TODO: remove after debugging
-        if engine == "google_forums":
-            organic = results.get("organic_results", [])
-            logger.info(f"[REDDIT/FORUMS] Search complete | query_type={query_type} | organic_results={len(organic)} | status={results.get('search_metadata', {}).get('status')}")
-            for i, r in enumerate(organic[:3]):
-                logger.info(f"[REDDIT/FORUMS]   result[{i+1}] title={r.get('title', '')[:50]}... | source={r.get('source', '')}")
         return {"query_type": query_type, "query": query, "results": results}
 
     def search_youtube(self, search_query: str) -> dict:
@@ -73,8 +64,6 @@ class SerpApiService:
         Run YouTube search via SerpAPI.
         Returns video_results and shorts_results from the API response.
         """
-        # TODO: remove after debugging
-        logger.info(f"[YT] SerpAPI search starting | search_query={search_query[:80]}...")
         serp_params = {
             "api_key": settings.SERPAPI_API_KEY,
             "engine": "youtube",
@@ -82,12 +71,7 @@ class SerpApiService:
             "output": "json",
         }
         search = GoogleSearch(serp_params)
-        results = search.get_dict()
-        # TODO: remove after debugging
-        vcount = len(results.get("video_results", []))
-        scount = len(results.get("shorts_results", []))
-        logger.info(f"[YT] SerpAPI search complete | videos={vcount} | shorts_sections={scount} | error={results.get('error', 'none')}")
-        return results
+        return search.get_dict()
 
 
 async def run_serp_search_async(

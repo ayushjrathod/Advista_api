@@ -1,12 +1,15 @@
 import logging
+from datetime import datetime
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
+from prisma import Json
 
 from src.models.research_brief import ResearchBrief
 from src.models.search_params import SearchParams
 from src.utils.config import settings
-from src.repositories.research_session_repository import research_session_repository
+from src.services.database_service import db
+
 logger = logging.getLogger(__name__)
 
 class ResearchService:
@@ -20,7 +23,6 @@ class ResearchService:
         
         # Initialize structured output LLM for search params extraction
         self.params_extractor_llm = self.llm.with_structured_output(SearchParams)
-        self.repo = research_session_repository
 
     async def create_research_query(self, research_brief: ResearchBrief, threadId: str) -> SearchParams:
 
@@ -63,16 +65,20 @@ class ResearchService:
             search_params_results = await self.params_extractor_llm.ainvoke([
                 HumanMessage(content=extraction_prompt)
             ])
-            
-            # Find the active session for this thread
-            active_session = await self.repo.find_by_thread_id(threadId)
-            
+
+            active_session = await db.prisma.researchsession.find_first(
+                where={'threadId': threadId},
+                order={'createdAt': 'desc'}
+            )
             if active_session:
-                await self.repo.update_search_params(
-                    session_id=active_session.id,
-                    search_params=search_params_results.model_dump() if search_params_results else {}
+                await db.prisma.researchsession.update(
+                    where={'id': active_session.id},
+                    data={
+                        'searchParams': Json(search_params_results.model_dump() if search_params_results else {}),
+                        'updatedAt': datetime.utcnow(),
+                    }
                 )
-            
+
             return search_params_results
         except Exception as e:
             logger.error(f"Error generating search params: {e}")

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from src.services.chatbot_service import chatbot_service
+from src.services.database_service import db
 from src.models.research_brief import ResearchBrief
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
@@ -20,7 +21,7 @@ class StartResearchRequest(BaseModel):
 
 
 async def _require_thread_owner(thread_id: str, current_user):
-    session = await chatbot_service.chat_session_repo.find_by_thread_id(thread_id)
+    session = await db.prisma.chatsession.find_unique(where={"threadId": thread_id})
     if not session:
         raise HTTPException(status_code=404, detail="Thread not found")
     if session.userId and current_user and session.userId != current_user.id:

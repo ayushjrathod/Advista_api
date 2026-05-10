@@ -1,14 +1,11 @@
 from typing import Any
 from src.services.firebase_service import firebase_service
-from src.repositories.user_repository import user_repository
+from src.services.database_service import db
 import logging
 
 logger = logging.getLogger(__name__)
 
 class AuthService:
-    def __init__(self):
-        self.user_repo = user_repository
-
     @staticmethod
     def _fallback_email(firebase_uid: str) -> str:
         return f"anonymous-{firebase_uid}@advista.local"
@@ -23,33 +20,26 @@ class AuthService:
 
         is_verified = bool(claims.get("email_verified", False))
 
-        user = await self.user_repo.find_by_firebase_uid(firebase_uid)
+        user = await db.prisma.user.find_unique(where={"firebaseUid": firebase_uid})
         if user:
-            return await self.user_repo.update_from_firebase(
-                user_id=user.id,
-                email=email,
-                firebase_uid=firebase_uid,
-                is_verified=is_verified,
+            return await db.prisma.user.update(
+                where={"id": user.id},
+                data={"email": email, "firebaseUid": firebase_uid, "isVerified": is_verified},
             )
 
-        user_by_email = await self.user_repo.find_by_email(email)
+        user_by_email = await db.prisma.user.find_unique(where={"email": email})
         if user_by_email:
-            return await self.user_repo.update_from_firebase(
-                user_id=user_by_email.id,
-                email=email,
-                firebase_uid=firebase_uid,
-                is_verified=is_verified,
+            return await db.prisma.user.update(
+                where={"id": user_by_email.id},
+                data={"email": email, "firebaseUid": firebase_uid, "isVerified": is_verified},
             )
 
-        return await self.user_repo.create(
-            email=email,
-            firebase_uid=firebase_uid,
-            is_verified=is_verified,
+        return await db.prisma.user.create(
+            data={"email": email, "password": "", "firebaseUid": firebase_uid, "isVerified": is_verified}
         )
 
     def is_email_available(self, email: str) -> bool:
         """Check email availability against Firebase Auth."""
         return firebase_service.get_user_by_email(email) is None
 
-# Global instance
 auth_service = AuthService()

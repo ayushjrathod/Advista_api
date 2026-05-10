@@ -143,9 +143,6 @@ Use only the research data provided — do not fabricate information.""")
         """
         report = ResearchReport()
         youtube_context = analysis_service.get_youtube_context(processed_results) if processed_results.youtube_insights else ""
-        # TODO: remove after debugging
-        if youtube_context:
-            logger.info(f"[YT] Synthesis using youtube_context | len={len(youtube_context)} chars")
 
         # Synthesize each section
         if processed_results.company_product_insights:

@@ -56,10 +56,6 @@ class AnalysisService:
                     all_sources.update(insights.sources)
                     categories_processed += 1
                     logger.info(f"Processed {category_key}: {len(insights.top_results)} results, {len(insights.related_questions)} questions")
-                    # TODO: remove after debugging (audience/competitor use google_forums/Reddit)
-                    if category_key in ("customer_sentiment", "competitor_landscape"):
-                        sources_preview = list(insights.sources)[:5]
-                        logger.info(f"[REDDIT/FORUMS] Processed category={category_key} | top_results={len(insights.top_results)} | sources_sample={sources_preview}")
                 except Exception as e:
                     logger.error(f"Error processing category {category_key}: {e}")
 
@@ -67,8 +63,6 @@ class AnalysisService:
         if "youtube" in raw_results:
             try:
                 youtube_data = raw_results["youtube"]
-                # TODO: remove after debugging
-                logger.info(f"[YT] Processing youtube_insights | videos={len(youtube_data.get('videos', []))} | shorts={len(youtube_data.get('shorts', []))}")
                 processed.youtube_insights = self._process_youtube(youtube_data)
                 for v in youtube_data.get("videos") or []:
                     all_sources.add(v.get("channel") or "YouTube")
@@ -79,9 +73,6 @@ class AnalysisService:
                     f"Processed youtube: {len(processed.youtube_insights.videos)} videos, "
                     f"{len(processed.youtube_insights.shorts)} shorts"
                 )
-                # TODO: remove after debugging
-                transcript_chars = sum(len(v.transcript) for v in processed.youtube_insights.videos) + sum(len(s.transcript) for s in processed.youtube_insights.shorts)
-                logger.info(f"[YT] youtube_insights ready | total_transcript_chars={transcript_chars}")
             except Exception as e:
                 logger.error(f"Error processing YouTube data: {e}")
 

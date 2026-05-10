@@ -76,7 +76,6 @@ dependencies = [
     { name = "langchain" },
     { name = "langchain-groq" },
     { name = "langgraph" },
-    { name = "mangum" },
     { name = "passlib", extra = ["bcrypt"] },
     { name = "prisma" },
     { name = "pydantic" },
@@ -108,7 +107,6 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.0.1" },
     { name = "langchain-groq", specifier = ">=1.0.0" },
     { name = "langgraph", specifier = ">=1.0.0" },
-    { name = "mangum", specifier = ">=0.17.0" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
     { name = "prisma", specifier = ">=0.15.0" },
     { name = "pydantic", specifier = ">=2.12.0" },
@@ -1236,18 +1234,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/09/51/58d561dd40ec564509724f0a6a7148aa8090143208ef5d06b73b7fc90d31/langsmith-0.4.37.tar.gz", hash = "sha256:d9a0eb6dd93f89843ac982c9f92be93cf2bcabbe19957f362c547766c7366c71", size = 959089, upload-time = "2025-10-15T22:33:59.465Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/14/e8/edff4de49cf364eb9ee88d13da0a555844df32438413bf53d90d507b97cd/langsmith-0.4.37-py3-none-any.whl", hash = "sha256:e34a94ce7277646299e4703a0f6e2d2c43647a28e8b800bb7ef82fd87a0ec766", size = 396111, upload-time = "2025-10-15T22:33:57.392Z" },
-]
-
-[[package]]
-name = "mangum"
-version = "0.21.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/89/cb/d9f4d685a0b8eceac10991e15ac471d9568e4e42c2489ae9bf072828c1c2/mangum-0.21.0.tar.gz", hash = "sha256:e31ed72d67f9958fa4379f65df77729906dec6dfa00afa6ed4e06c77833000de", size = 89130, upload-time = "2026-02-01T17:17:42.816Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b7/50/e3c694b8e122551e4557450219283771334dee2ed5734a8398c8b8018c50/mangum-0.21.0-py3-none-any.whl", hash = "sha256:309e48f5c629542516c5106ecf079f4ec08809ed50df882238d98fe1392820c7", size = 17146, upload-time = "2026-02-01T17:17:41.553Z" },
 ]
 
 [[package]]
