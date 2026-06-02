@@ -1,8 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Request
 from src.models.user import (
-    AuthStateResponse, UserCreate, UserResponse, UserSignIn,
-    VerifyCodeRequest, ForgotPasswordRequest, 
-    ResetPasswordRequest, MessageResponse
+    AuthStateResponse, UserResponse, MessageResponse
 )
 from src.services.auth_service import auth_service
 from src.services.firebase_service import firebase_service
@@ -92,60 +90,12 @@ async def check_email_unique(email: str):
         logger.error(f"Check email unique error: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
-@auth_router.post("/signup", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
-async def signup(user_data: UserCreate):
-    """Deprecated signup endpoint. Firebase client auth is the source of truth."""
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Use Firebase client auth for sign up",
-    )
-
-@auth_router.post("/signin", response_model=MessageResponse)
-async def signin(user_credentials: UserSignIn):
-    """Deprecated signin endpoint. Firebase client auth is the source of truth."""
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Use Firebase client auth for sign in",
-    )
-
 @auth_router.post("/logout", response_model=MessageResponse)
 async def logout():
     """No-op logout endpoint for Firebase client auth."""
     return MessageResponse(
         message="Logged out successfully",
         success=True
-    )
-
-@auth_router.post("/verify-email", response_model=MessageResponse)
-async def verify_email(verify_data: VerifyCodeRequest):
-    """Deprecated verify endpoint. Firebase handles email verification."""
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Use Firebase email verification flow",
-    )
-
-@auth_router.post("/forgot-password", response_model=MessageResponse)
-async def forgot_password(forgot_data: ForgotPasswordRequest):
-    """Deprecated forgot-password endpoint. Firebase handles password reset."""
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Use Firebase password reset flow",
-    )
-
-@auth_router.post("/reset-password", response_model=MessageResponse)
-async def reset_password(reset_data: ResetPasswordRequest):
-    """Deprecated reset-password endpoint. Firebase handles password reset."""
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Use Firebase password reset flow",
-    )
-
-@auth_router.post("/resend-verification", response_model=MessageResponse)
-async def resend_verification_code(request_data: ForgotPasswordRequest):
-    """Deprecated resend-verification endpoint. Firebase handles email verification."""
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Use Firebase email verification flow",
     )
 
 @auth_router.get("/me", response_model=AuthStateResponse)
