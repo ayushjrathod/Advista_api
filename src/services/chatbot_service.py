@@ -9,8 +9,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from src.services.database_service import db
-from src.repositories.chat_session_repository import chat_session_repository
-from src.repositories.research_session_repository import research_session_repository
+from prisma import Json
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -18,17 +17,79 @@ logger = logging.getLogger(__name__)
 
 class ChatbotService:
     def __init__(self) -> None: 
-        # Initialize chat model
+        self.llm = None
+        self.extractor_llm = None
+        self.memory = None
+        self.app = None
+
+        # Thread-specific research briefs storage
+        # thread_id: research_brief
+        self.research_briefs: Dict[str, ResearchBrief] = {}
+        
+        # Thread-specific conversation history cache (fallback when memory fails)
+        # thread_id: list of (role, content) tuples
+        self.conversation_history: Dict[str, list[tuple[str, str]]] = {}
+
+        # System behavior prompt
+        self.system_message = SystemMessage(
+            content=(
+                                """You are a Competitive Intelligence Research Assistant.
+
+                                Your goal is to collect a complete CI brief through a NATURAL, FREE-FLOWING conversation.
+                                You are not a rigid form bot.
+
+                                CONVERSATION STYLE:
+                                - Be conversational, sharp, and consultant-like.
+                                - Let users describe their market in their own words.
+                                - Acknowledge useful details and ask smart follow-ups.
+                                - Keep responses concise (usually 2-5 sentences).
+
+                                FLEXIBLE QUESTIONING RULES:
+                                - Prefer one focused question at a time, but you may ask up to two related questions when helpful.
+                                - Do NOT force a strict fixed order if the user naturally provides information out of order.
+                                - If the user shares multiple details at once, absorb them and move to the biggest missing gap.
+
+                                CRITICAL RULE: NEVER end a response with just a statement. ALWAYS end with a question that drives the
+                                conversation forward.
+
+                                CRITICAL FIELDS TO COLLECT (any order):
+                                1. company_name — the user's own company
+                                2. product_description — what their product/service does
+                                3. target_customers — who they sell to (ICP)
+                                4. competitor_names — key competitors in their space
+                                5. strategic_goals — what CI outcome they need (e.g., find gaps, track threats, prepare battlecards)
+                                6. primary_channels — where they compete (e.g., LinkedIn, G2, industry forums, YouTube)
+                                7. positioning_hypothesis — how they currently differentiate (or how they want to)
+                                8. additional_context — any known competitor moves, recent events, or specific focus areas
+
+                                COMPLETION RULE:
+                                Minimum required: company_name, product_description, target_customers, competitor_names,
+                                strategic_goals, primary_channels.
+                                Once minimum met, optionally gather positioning_hypothesis and additional_context.
+                                Then conclude with: "Perfect! I have enough to generate your competitive intelligence report. You can
+                                add more context or click 'Generate CI Report' when ready."
+
+                                IMPORTANT BEHAVIOR:
+                                - Never ask endless questions.
+                                - Do not produce the analysis yourself — only collect brief inputs.
+                                - Avoid repeating already captured information.
+                                """
+            )
+        )
+
+    def _ensure_runtime_initialized(self) -> None:
+        if self.app is not None and self.llm is not None and self.extractor_llm is not None and self.memory is not None:
+            return
+
+        logger.info("Initializing chatbot runtime")
+
         self.llm = init_chat_model(
             model_provider="groq",
             model=settings.GROQ_MODEL,
             api_key=settings.GROQ_API_KEY1
         )
-
-        # Initialize structured output LLM for data extraction
         self.extractor_llm = self.llm.with_structured_output(ResearchBrief)
 
-        # Build simple LangGraph workflow with memory
         workflow = StateGraph(state_schema=MessagesState)
 
         def call_model(state: MessagesState):
@@ -41,91 +102,6 @@ class ChatbotService:
 
         self.memory = MemorySaver()
         self.app = workflow.compile(checkpointer=self.memory)
-
-        # Repository instances
-        self.chat_session_repo = chat_session_repository
-        self.research_session_repo = research_session_repository
-        
-        # Thread-specific research briefs storage
-        # thread_id: research_brief
-        self.research_briefs: Dict[str, ResearchBrief] = {}
-        
-        # Thread-specific conversation history cache (fallback when memory fails)
-        # thread_id: list of (role, content) tuples
-        self.conversation_history: Dict[str, list[tuple[str, str]]] = {}
-
-        # System behavior prompt
-        self.system_message = SystemMessage(
-            content=(
-                """You are Advista Research Assistant. Your ONLY job is to ask SHORT, SPECIFIC questions to collect information.
-                
-                CRITICAL RULES:
-                1. Ask ONLY ONE question per response
-                2. Keep responses under 3 sentences
-                3. DO NOT make statements or summarize without asking a follow-up question
-                4. After collecting 6-8 pieces of information, STOP and tell user to click the button above
-                5. VALIDATE EVERY ANSWER before moving to the next question
-
-                VALIDATION RULES (CRITICAL):
-                - If a user's answer is unclear, nonsensical, or doesn't answer the question (e.g., "wtd", "ididiidid", single letters, random characters), you MUST ask the same question again or ask for clarification
-                - NEVER move to the next question if the current answer is invalid or doesn't make sense
-                - Answers must be meaningful and relevant to the question asked
-                - If an answer is too vague or unclear, ask: "I didn't understand that. Could you please [restate the question in a different way]?"
-                - Only proceed to the next question when you have received a valid, understandable answer
-                
-                HANDLING OPINION REQUESTS:
-                - If user asks "what do you think?" or "what should I do?" or defers to your judgment, provide a helpful suggestion based on the context you've collected
-                - Example: If asked about platforms for tech companies, suggest: "For tech companies, I'd recommend LinkedIn and Google Ads as they're effective for B2B targeting. Would you like to use these platforms?"
-                - After providing your suggestion, still extract the information (use your suggestion) and move to the next question
-                - DO NOT stop collecting information just because the user asked for your opinion - you still need to complete all required fields
-                - Your suggestions should be specific and actionable, not vague
-
-                Information to collect (in order):
-                1. What is the product/service name? (MUST be a clear product/service name)
-                2. Give me a detailed description of the product/service. (MUST be a meaningful description, not gibberish)
-                3. Who is the target audience/customer segment? (age, demographics, interests) - MUST be specific, not vague like "anyone"
-                4. What are the main competitors/products/services in the market? (MUST list actual competitor names or similar products)
-                5. What are the campaign goals/objectives? (brand awareness, sales, leads, etc.) - MUST be clear objectives
-                6. What platforms do they prefer? (Google Ads, Facebook, Instagram, etc.) - MUST list actual platform names
-                7. What tone/style do they want? (professional, playful, serious, etc.) - MUST be a clear style descriptor
-                8. Any additional context or requirements?
-
-                EXAMPLES OF VALIDATION:
-                User: "wtd" or "ididiidid" or "xyz"
-                You: "I didn't understand that answer. Could you please tell me [restate the question]?"
-
-                User: "anyone" (when asked about target audience)
-                You: "Could you be more specific? For example, what age range, demographics, or interests should we target?"
-
-                EXAMPLES OF HANDLING OPINION REQUESTS:
-                User: "what do you think?" (when asked about platforms for tech companies)
-                You: "For tech companies, I'd recommend LinkedIn and Google Ads as they're effective for B2B targeting. I'll note these platforms. What tone and style would you like for the campaign?"
-
-                User: "what should I do?" (when asked about platforms)
-                You: "Based on your target audience of tech companies, LinkedIn and Google Ads would be most effective. I'll use these. What tone would you prefer - professional, casual, or technical?"
-
-                WHEN TO STOP:
-                You MUST collect at least these 6 critical fields before stopping:
-                1. Product/service name
-                2. Product description
-                3. Target audience
-                4. Campaign goals
-                5. Competitors
-                6. Preferred platforms (MUST be specific platform names, not vague or missing)
-                
-                After collecting ALL 6 of these fields, you can ask about tone/style and additional notes. Only after collecting at least 6-7 fields total, say:
-                "Perfect! I have enough information. You can either provide additional information (things we should know about the campaign) or click 'Confirm & Start Research' when ready."
-                
-                DO NOT stop if preferred_platforms is empty or missing - this is a critical field that must be collected.
-                
-                DO NOT continue asking endless questions. DO NOT offer to create plans or strategies.
-
-                Move through the questions systematically. Don't repeat information they already told you.
-                
-                STRICTLY: Only move to the next question when the current question has been answered properly with a valid, logical response.
-                """
-            )
-        )
     
 
     def get_config_for_thread(self, thread_id: str) -> RunnableConfig:
@@ -133,6 +109,8 @@ class ChatbotService:
         Gets a thread-specific config.
         Initializes the thread with the system message if it's new.
         """
+        self._ensure_runtime_initialized()
+
         config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         # Initialize system message if no prior memory or messages exist
@@ -150,14 +128,14 @@ class ChatbotService:
         if thread_id not in self.research_briefs:
             logger.info(f"Initializing new research brief cache for thread: {thread_id}")
             self.research_briefs[thread_id] = ResearchBrief(
-                product_name="",
+                company_name="",
                 product_description="",
-                target_audience="",
-                campaign_goals="",
+                target_customers="",
+                strategic_goals="",
                 competitor_names=[],
-                preferred_platforms=[],
-                tone_and_style="",
-                additional_notes=""
+                primary_channels=[],
+                positioning_hypothesis="",
+                additional_context=""
             )
         return self.research_briefs[thread_id]
 
@@ -170,12 +148,14 @@ class ChatbotService:
             return self.get_research_brief_for_thread(thread_id) # Return existing brief
 
         extraction_prompt = (
-            f"Extract any research brief information from this conversation. "
+            f"Extract any competitive intelligence brief information from this conversation. "
             f"Extract information from BOTH user responses AND bot suggestions/statements. "
-            f"If the bot recommended specific platforms, competitors, or other information, extract those as well. "
+            f"If the bot recommended specific channels, competitors, or other information, extract those as well. "
             f"Only fill in fields where information is explicitly provided (either by user or bot). "
             f"Leave fields empty if no information is given.\n\n"
-            f"CRITICAL: competitor_names and preferred_platforms MUST be arrays (lists). "
+            f"Fields to extract: company_name, product_description, target_customers, competitor_names, "
+            f"strategic_goals, primary_channels, positioning_hypothesis, additional_context.\n\n"
+            f"CRITICAL: competitor_names and primary_channels MUST be arrays (lists). "
             f"If multiple values are mentioned, put them in an array. "
             f"If only one value is mentioned, put it in an array with one element. "
             f"If no values are mentioned, use an empty array []. "
@@ -184,6 +164,7 @@ class ChatbotService:
         )
 
         try:
+            self._ensure_runtime_initialized()
             extracted: Any = await self.extractor_llm.ainvoke([HumanMessage(content=extraction_prompt)])
             
             # Normalize extracted data to ensure arrays are always arrays
@@ -197,14 +178,14 @@ class ChatbotService:
                     elif not isinstance(competitor_names, list):
                         extracted["competitor_names"] = []
                 
-                # Ensure preferred_platforms is always a list
-                if "preferred_platforms" in extracted:
-                    preferred_platforms = extracted["preferred_platforms"]
-                    if isinstance(preferred_platforms, str):
+                # Ensure primary_channels is always a list
+                if "primary_channels" in extracted:
+                    primary_channels = extracted["primary_channels"]
+                    if isinstance(primary_channels, str):
                         # If it's a string, try to split by comma or use as single item
-                        extracted["preferred_platforms"] = [platform.strip() for platform in preferred_platforms.split(",") if platform.strip()] if preferred_platforms.strip() else []
-                    elif not isinstance(preferred_platforms, list):
-                        extracted["preferred_platforms"] = []
+                        extracted["primary_channels"] = [channel.strip() for channel in primary_channels.split(",") if channel.strip()] if primary_channels.strip() else []
+                    elif not isinstance(primary_channels, list):
+                        extracted["primary_channels"] = []
                 
                 return ResearchBrief(**extracted)
             return cast(ResearchBrief, extracted)
@@ -269,7 +250,7 @@ class ChatbotService:
 
         # 3. Stream the response
         try:
-            async for chunk in self.app.astream(inputs, config):  # type: ignore
+            async for chunk in self.app.astream(inputs, config, stream_mode="updates"):  # type: ignore
                 if messages_chunk := chunk.get("model_call"):
                     if messages_chunk["messages"]:
                         content = messages_chunk["messages"][-1].content
@@ -322,19 +303,20 @@ class ChatbotService:
 
             # updated chat session DB
             if self.research_briefs[thread_id].is_complete() and db.is_connected():
-                session = await self.chat_session_repo.find_by_thread_id(thread_id)
+                session = await db.prisma.chatsession.find_unique(where={"threadId": thread_id})
                 if session and session.status != "brief_generated":
-                    await self.chat_session_repo.update_status(
-                        thread_id=thread_id,
-                        status="brief_generated",
-                        research_brief=self.research_briefs[thread_id].model_dump_json()
+                    await db.prisma.chatsession.update(
+                        where={"threadId": thread_id},
+                        data={"status": "brief_generated", "researchBrief": self.research_briefs[thread_id].model_dump_json()}
                     )
-                    await self.research_session_repo.create(
-                        thread_id=thread_id,
-                        user_id=None,
-                        research_brief=self.research_briefs[thread_id].model_dump(),
-                        task_ids={},
-                        status="pending"
+                    await db.prisma.researchsession.create(
+                        data={
+                            'userId': None,
+                            'status': 'pending',
+                            'researchBrief': Json(self.research_briefs[thread_id].model_dump()),
+                            'taskIds': Json({}),
+                            'chatSession': {'connect': {'threadId': thread_id}},
+                        }
                     )
                     logger.info(f"Research brief updated in DB for thread {thread_id}")
 
@@ -355,12 +337,14 @@ class ChatbotService:
         thread_id = str(uuid.uuid4())
         now = datetime.datetime.now(datetime.timezone.utc)
         
-        await self.chat_session_repo.create(
-            thread_id=thread_id,
-            user_id=user_id,
-            status="initialized",
-            last_activity=now,
-            expires_at=now + datetime.timedelta(days=7)
+        await db.prisma.chatsession.create(
+            data={
+                "threadId": thread_id,
+                "userId": user_id,
+                "status": "initialized",
+                "lastActivity": now,
+                "expiresAt": now + datetime.timedelta(days=7),
+            }
         )
         return thread_id
 

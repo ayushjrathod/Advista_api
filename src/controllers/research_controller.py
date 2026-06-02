@@ -1,10 +1,8 @@
 import asyncio
-import json
 import logging
-import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from src.models.research_brief import ResearchBrief
 from src.models.research_insights import ProcessedSearchResults
@@ -13,28 +11,27 @@ from src.services.analysis_service import analysis_service
 from src.services.synthesis_service import synthesis_service
 from src.services.research_session_service import research_session_service
 from src.services.database_service import db
-from src.utils.config import settings
 from src.services.serpapi_service import run_serp_search_async
 from src.services.youtube_service import run_youtube_research_async
+from src.utils.config import settings
+from src.controllers.auth_controller import UNAUTHENTICATED_MESSAGE, get_optional_user
 
 logger = logging.getLogger(__name__)
-# Disable by default for Lambda (ephemeral filesystem); set ENABLE_DEBUG_FILES=true locally
-save_to_json = os.environ.get("ENABLE_DEBUG_FILES", "false").lower() == "true"
+
 
 class StartResearchRequest(BaseModel):
     research_brief: ResearchBrief
     threadId: str
-    userId: Optional[str] = None
 
 research_router = APIRouter()
 
 # Category labels for resources display
 RESOURCE_SOURCE_FOR_CATEGORY = {
-    "audience": "reddit_forums",
-    "competitor": "reddit_forums",
-    "product": "google",
-    "campaign": "google",
-    "platform": "google",
+    "customer_sentiment": "reddit_forums",
+    "competitor_landscape": "reddit_forums",
+    "company_product": "google",
+    "strategic_gap": "google",
+    "battlecard": "google",
 }
 
 
@@ -83,59 +80,51 @@ def _build_resources_used(processed_results, source_for_category):
 
 
 @research_router.post("/start-research")
-async def start_research(request: StartResearchRequest):
-    """
-    Endpoint to start research with the completed brief.
-    This will be called by the frontend after user confirms the brief.
-    """
+async def start_research(request: StartResearchRequest, current_user = Depends(get_optional_user)):
     session = None
     try:
-        # Validate that the brief has required fields
         if not request.research_brief.is_complete():
             raise HTTPException(
                 status_code=400,
                 detail=f"Research brief is incomplete. Missing required fields: {request.research_brief.get_missing_fields()}"
             )
-        print(request.research_brief)
-        
-        # Create research session in database
+
         logger.info(f"Starting research for thread {request.threadId}")
-        user_id = request.userId if request.userId else None
+        chat_session = await db.prisma.chatsession.find_unique(where={"threadId": request.threadId})
+        if not chat_session:
+            raise HTTPException(status_code=404, detail="Chat thread not found")
+        if chat_session.userId and current_user and chat_session.userId != current_user.id:
+            raise HTTPException(status_code=403, detail="You do not have access to this thread")
+
+        user_id = current_user.id if current_user else chat_session.userId
         session = await research_session_service.create_session(
             thread_id=request.threadId,
             user_id=user_id,
             research_brief=request.research_brief.model_dump(),
             task_ids={}
         )
-        session_id = session['id']   
-        
-        # Generate search params from research brief
+        session_id = session['id']
+
         search_params = await research_service.create_research_query(
-            request.research_brief, 
+            request.research_brief,
             threadId=request.threadId
         )
-        
-        # Define query types and their corresponding queries
+
         query_mapping = {
-            "product": search_params.product_search_query,
-            "competitor": search_params.competitor_search_query,
-            "audience": search_params.audience_insight_query,
-            "campaign": search_params.campaign_strategy_query,
-            "platform": search_params.platform_specific_query,
+            "company_product": search_params.company_product_query,
+            "competitor_landscape": search_params.competitor_landscape_query,
+            "customer_sentiment": search_params.customer_sentiment_query,
+            "strategic_gap": search_params.strategic_gap_query,
+            "battlecard": search_params.battlecard_query,
         }
 
-        # Per-query engine mapping: audience & competitor use forums for sentiment; others use general search
         ENGINE_FOR_QUERY_TYPE = {
-            "audience": "google_forums",
-            "competitor": "google_forums",
-            "product": "google",
-            "campaign": "google",
-            "platform": "google",
+            "customer_sentiment": "google_forums",
+            "competitor_landscape": "google_forums",
+            "company_product": "google",
+            "strategic_gap": "google",
+            "battlecard": "google",
         }
-        # TODO: remove after debugging
-        forum_types = [qt for qt, eng in ENGINE_FOR_QUERY_TYPE.items() if eng == "google_forums"]
-        qm_preview = {k: (v[:50] + "..." if v and len(str(v)) > 50 else v) for k, v in query_mapping.items()}
-        logger.info(f"[REDDIT/FORUMS] Engine mapping | forum_types={forum_types} | query_mapping={qm_preview}")
 
         successful_results = {}
         
@@ -201,8 +190,6 @@ async def start_research(request: StartResearchRequest):
                 for query_type, query in query_mapping.items()
                 if query
             ]
-            # TODO: remove after debugging
-            logger.info(f"[REDDIT/FORUMS] Submitting {len(tasks)} SerpAPI tasks | forum_tasks={[qt for qt,q in query_mapping.items() if q and ENGINE_FOR_QUERY_TYPE.get(qt)=='google_forums']}")
             if not tasks:
                 await research_session_service.update_status(
                     session_id, 'failed', error_message="No search queries generated"
@@ -211,7 +198,7 @@ async def start_research(request: StartResearchRequest):
             
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            for i, result in enumerate(results):
+            for result in results:
                 if isinstance(result, Exception):
                     logger.error(f"SerpAPI search failed: {result}")
                     continue
@@ -219,115 +206,50 @@ async def start_research(request: StartResearchRequest):
                     logger.error(f"SerpAPI search error for {result.get('query_type', '?')}: {result['error']}")
                     continue
                 query_type = result.get("query_type")
-                engine_used = ENGINE_FOR_QUERY_TYPE.get(query_type, "google")
                 successful_results[query_type] = {
                     "query": result["query"],
                     "results": result["results"],
                 }
                 logger.info(f"SerpAPI search completed for {query_type}")
-                # TODO: remove after debugging
-                if engine_used == "google_forums":
-                    organic = result.get("results", {}).get("organic_results", [])
-                    logger.info(f"[REDDIT/FORUMS] Forum result saved | category={query_type} | organic_count={len(organic)} | sources={list(set(r.get('source','') for r in organic[:5]))}")
         
         if not successful_results:
             await research_session_service.update_status(
-                session_id,
-                'failed',
-                error_message="All SerpAPI searches failed or timed out"
+                session_id, 'failed', error_message="All SerpAPI searches failed or timed out"
             )
-            raise HTTPException(
-                status_code=500,
-                detail="All SerpAPI searches failed or timed out."
-            )
+            raise HTTPException(status_code=500, detail="All SerpAPI searches failed or timed out.")
 
-        # Run YouTube research: top 3 videos + top 5 shorts with transcripts
-        youtube_query = request.research_brief.product_name or search_params.product_search_query or "advertising"
-        # TODO: remove after debugging
-        logger.info(f"[YT] Starting YouTube research | session_id={session_id} | query={youtube_query} | product_name={request.research_brief.product_name}")
+        youtube_query = request.research_brief.company_name or search_params.company_product_query or "competitive intelligence"
         try:
             logger.info(f"Running YouTube research for: {youtube_query}")
             youtube_results = await run_youtube_research_async(youtube_query)
             if youtube_results and "error" not in youtube_results:
                 successful_results["youtube"] = youtube_results
-                vcount = len(youtube_results.get("videos", []))
-                scount = len(youtube_results.get("shorts", []))
-                transcripts_with_content = sum(1 for v in youtube_results.get("videos", []) if v.get("transcript")) + sum(1 for s in youtube_results.get("shorts", []) if s.get("transcript"))
-                logger.info(f"YouTube: {vcount} videos, {scount} shorts")
-                # TODO: remove after debugging
-                logger.info(f"[YT] YouTube research done | videos={vcount} | shorts={scount} | transcripts_with_content={transcripts_with_content}")
+                logger.info(f"YouTube: {len(youtube_results.get('videos', []))} videos, {len(youtube_results.get('shorts', []))} shorts")
             else:
                 logger.warning("YouTube research returned no results or error")
-                # TODO: remove after debugging
-                logger.warning(f"[YT] YouTube skipped | has_error={'error' in (youtube_results or {})} | empty={not youtube_results}")
         except Exception as e:
             logger.warning(f"YouTube research failed (continuing without): {e}")
-            # TODO: remove after debugging
-            logger.warning(f"[YT] YouTube exception | error={e}", exc_info=True)
-        
-        # Save search results to database
+
         await research_session_service.save_search_results(session_id, successful_results)
-        
-        # Save to file for debugging (optional)
-        if save_to_json:
-            with open("search_results.json", "w") as f:
-                json.dump(successful_results, f, indent=2)
-            logger.info(f"Search results saved ({len(successful_results)} queries)")
-        
-        # Update status to processing
         await research_session_service.update_status(session_id, 'processing')
-        
-        # Process and analyze the search results
-        # TODO: Implement analysis service
+
         processed_results = analysis_service.process_search_results(successful_results)
-        
-        # Save processed results to database
-        await research_session_service.save_processed_results(
-            session_id,
-            processed_results.model_dump()
-        )
-        
-        # Save to file for debugging (optional)
-        if save_to_json:
-            with open("processed_results.json", "w") as f:
-                json.dump(processed_results.model_dump(), f, indent=2)
-            logger.info(f"Processed results saved")
-        
-        # Generate combined context for reference
-        # TODO: Implment analysis service
-        combined_context = analysis_service.get_combined_context(processed_results)
-        if save_to_json:
-            with open("research_context.txt", "w") as f:
-                f.write(combined_context)
-            logger.info("Research context saved")
-        
-        # Update status to synthesizing
+        await research_session_service.save_processed_results(session_id, processed_results.model_dump())
+
         await research_session_service.update_status(session_id, 'synthesizing')
-        
-        # Synthesize insights using LLM
+
         logger.info("Starting LLM synthesis...")
         research_report = await synthesis_service.synthesize_all(
-            processed_results, 
+            processed_results,
             research_brief=request.research_brief.model_dump()
         )
-        
-        # Save final report to database
+
         await research_session_service.save_report(session_id, research_report.model_dump())
 
-        # Build resources_used for frontend Resources tab and DB
         resources_used = _build_resources_used(processed_results, RESOURCE_SOURCE_FOR_CATEGORY)
         await research_session_service.save_resources_used(session_id, resources_used)
-        
-        # Update status to completed
         await research_session_service.update_status(session_id, 'completed')
-        
-        # Save to file for debugging (optional)
-        if save_to_json:
-            with open("research_report.json", "w") as f:
-                json.dump(research_report.model_dump(), f, indent=2)
-            logger.info("Research report saved")
-        
-        # Build response with processing summary
+
         category_summaries = {}
         for insights in processed_results.get_all_insights():
             category_summaries[insights.category] = analysis_service.get_category_summary(insights)
@@ -343,108 +265,99 @@ async def start_research(request: StartResearchRequest):
             "report": research_report.model_dump(),
             "resources_used": resources_used,
         }
-        
+
     except Exception as e:
         logger.error(f"Error starting research: {e}")
-        
-        # Update session status to failed if session was created
         if session:
             try:
                 await research_session_service.update_status(
-                    session['id'],
-                    'failed',
-                    error_message=str(e)
+                    session['id'], 'failed', error_message=str(e)
                 )
             except Exception as update_error:
                 logger.error(f"Failed to update session status: {update_error}")
-        
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@research_router.get("/processed-results")
-async def get_processed_results():
-    """
-    Get the processed research results.
-    """
-    try:
-        try:
-            with open("processed_results.json", "r") as f:
-                processed = json.load(f)
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=404,
-                detail="processed_results.json not found. Run /start-research or /process-existing first."
-            )
-        
+@research_router.get("/sessions")
+async def get_research_sessions(current_user = Depends(get_optional_user)):
+    """Get all research sessions for the current user, newest first."""
+    if not current_user:
         return {
             "status": "success",
-            "data": processed
+            "authenticated": False,
+            "message": UNAUTHENTICATED_MESSAGE,
+            "sessions": [],
         }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting processed results: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
+    if not db.is_connected():
+        await db.connect()
+    sessions = await db.prisma.researchsession.find_many(
+        where={"userId": current_user.id},
+        order={"createdAt": "desc"},
+    )
+    return {
+        "status": "success",
+        "authenticated": True,
+        "sessions": [
+            {
+                "id": s.id,
+                "status": s.status,
+                "createdAt": s.createdAt.isoformat() if s.createdAt else None,
+                "completedAt": s.completedAt.isoformat() if s.completedAt else None,
+                "researchBrief": s.researchBrief,
+            }
+            for s in sessions
+        ],
+    }
 
 
 @research_router.get("/report")
-async def get_research_report(session_id: Optional[str] = None):
-    """
-    Get the synthesized research report. When session_id is provided, fetches from DB.
-    When omitted, tries file fallback (local dev) or latest completed session from DB.
-    """
+async def get_research_report(session_id: Optional[str] = None, current_user = Depends(get_optional_user)):
+    """Get the synthesized research report by session_id, or the latest completed session."""
     try:
         if session_id:
             session = await research_session_service.get_session(session_id)
             if not session:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Research session not found."
-                )
+                raise HTTPException(status_code=404, detail="Research session not found.")
+            if current_user and session.get("userId") and session.get("userId") != current_user.id:
+                raise HTTPException(status_code=403, detail="You do not have access to this report.")
             report_data = session.get("report")
             resources_used = session.get("resourcesUsed")
             if not report_data:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Report not found for this session."
-                )
+                raise HTTPException(status_code=404, detail="Report not found for this session.")
             return {
                 "status": "success",
+                "authenticated": bool(current_user),
+                "message": None if current_user else UNAUTHENTICATED_MESSAGE,
                 "report": report_data,
-                "resources_used": resources_used
+                "resources_used": resources_used,
             }
 
-        # Fallback: try local file (dev) or latest completed session from DB
-        try:
-            with open("research_report.json", "r") as f:
-                report = json.load(f)
+        if not current_user:
             return {
                 "status": "success",
-                "report": report,
-                "resources_used": None
+                "authenticated": False,
+                "message": UNAUTHENTICATED_MESSAGE,
+                "report": None,
+                "resources_used": None,
             }
-        except FileNotFoundError:
-            pass
 
-        # No file: try to get latest completed session from DB
         if not db.is_connected():
             await db.connect()
         session = await db.prisma.researchsession.find_first(
-            where={"status": "completed"},
+            where={"status": "completed", "userId": current_user.id},
             order={"completedAt": "desc"}
         )
         if session:
             session_dict = session.model_dump()
             return {
                 "status": "success",
+                "authenticated": True,
                 "report": session_dict.get("report"),
-                "resources_used": session_dict.get("resourcesUsed")
+                "resources_used": session_dict.get("resourcesUsed"),
             }
 
-        raise HTTPException(
-            status_code=404,
-            detail="No report found. Run /start-research first."
-        )
+        raise HTTPException(status_code=404, detail="No report found. Run /start-research first.")
     except HTTPException:
         raise
     except Exception as e:

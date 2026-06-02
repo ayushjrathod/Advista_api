@@ -3,65 +3,60 @@ from typing import List, Optional
 
 
 class ResearchBrief(BaseModel):
-    """Research brief schema for advertising campaign"""
-    product_name: str = Field("", description="Name of the product/service")
+    """Research brief schema for competitive intelligence"""
+    company_name: str = Field("", description="Name of the user's company")
     product_description: str = Field("", description="Detailed description of the product/service")
-    target_audience: str = Field("", description="Description of the target audience/customer segment")
+    target_customers: str = Field("", description="Description of the target customers/ICP")
     competitor_names: List[str] = Field(default_factory=list, description="List of competitor names/products/services in the market")
-    campaign_goals: str = Field("", description="Primary goals and objectives for the campaign")
-    preferred_platforms: List[str] = Field(default_factory=list, description="Preferred advertising platforms (e.g., Google Ads, Facebook, Instagram)")
-    tone_and_style: str = Field("", description="Desired tone and style for creative content")
-    additional_notes: str = Field("", description="Any additional context or requirements")
+    strategic_goals: str = Field("", description="Primary CI goals and objectives (e.g., find gaps, track threats, prepare battlecards)")
+    primary_channels: List[str] = Field(default_factory=list, description="Primary channels where they compete (e.g., LinkedIn, G2, industry forums, YouTube)")
+    positioning_hypothesis: str = Field("", description="How they currently differentiate or want to")
+    additional_context: str = Field("", description="Any known competitor moves, recent events, or specific focus areas")
 
     def get_completion_percentage(self) -> float:
         """Calculate how much of the brief is complete"""
         total_fields = 8
         filled_fields = sum([
-            bool(self.product_name),
+            bool(self.company_name),
             bool(self.product_description),
-            bool(self.target_audience),
+            bool(self.target_customers),
             bool(self.competitor_names),
-            bool(self.campaign_goals),
-            bool(self.preferred_platforms),
-            bool(self.tone_and_style),
-            bool(self.additional_notes),
+            bool(self.strategic_goals),
+            bool(self.primary_channels),
+            bool(self.positioning_hypothesis),
+            bool(self.additional_context),
         ])
         return (filled_fields / total_fields) * 100
 
     def get_missing_fields(self) -> List[str]:
         """Get list of fields that are still empty"""
         missing = []
-        if not self.product_name:
-            missing.append("product_name")
+        if not self.company_name:
+            missing.append("company_name")
         if not self.product_description:
             missing.append("product_description")
-        if not self.target_audience:
-            missing.append("target_audience")
+        if not self.target_customers:
+            missing.append("target_customers")
         if not self.competitor_names:
             missing.append("competitor_names")
-        if not self.campaign_goals:
-            missing.append("campaign_goals")
-        if not self.preferred_platforms:
-            missing.append("preferred_platforms")
-        if not self.tone_and_style:
-            missing.append("tone_and_style")
-        if not self.additional_notes:
-            missing.append("additional_notes")
+        if not self.strategic_goals:
+            missing.append("strategic_goals")
+        if not self.primary_channels:
+            missing.append("primary_channels")
+        if not self.positioning_hypothesis:
+            missing.append("positioning_hypothesis")
+        if not self.additional_context:
+            missing.append("additional_context")
         return missing
 
     def is_complete(self) -> bool:
         """Check if core required fields are filled (enough to start research)"""
-        # Treat all eight fields as contributing to readiness; require 7/8
         core_fields = [
-            bool(self.product_name),
+            bool(self.company_name),
             bool(self.product_description),
-            bool(self.target_audience),
-            bool(self.campaign_goals),
+            bool(self.target_customers),
             bool(self.competitor_names),
-            bool(self.preferred_platforms),
-            bool(self.tone_and_style),
-            bool(self.additional_notes),
+            bool(self.strategic_goals),
+            bool(self.primary_channels),
         ]
-        # At least 7 out of 8 fields should be present
-        has_core = sum(core_fields) >= 7
-        return has_core
+        return all(core_fields)

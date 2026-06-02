@@ -1,5 +1,4 @@
 import logging
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,16 +11,16 @@ from src.services.database_service import db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def _is_lambda() -> bool:
-    return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
-
-
 async def lifespan(app: FastAPI):
-    await db.connect()
+    try:
+        await db.connect()
+    except Exception as exc:
+        logger.warning("Database unavailable during startup; continuing without an active DB connection: %s", exc)
     yield
-    # In Lambda, reuse connection across warm invocations; don't disconnect
-    if not _is_lambda():
+    try:
         await db.disconnect()
+    except Exception as exc:
+        logger.warning("Database disconnect during shutdown failed: %s", exc)
 
 app = FastAPI(
     title = "Advista",
@@ -81,7 +80,15 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return JSONResponse(content={"status": "ok", "message": "Advista API is healthy"}, status_code=200)
+    db_connected = db.is_connected()
+    return JSONResponse(
+        content={
+            "status": "ok" if db_connected else "degraded",
+            "message": "Advista API is healthy" if db_connected else "Advista API is running without a database connection",
+            "database_connected": db_connected,
+        },
+        status_code=200,
+    )
 
 
 @app.get("/api/v1/keep-alive")
@@ -146,5 +153,6 @@ if settings.ENABLE_CELERY:
 
 if __name__ == "__main__":
     import uvicorn 
-    uvicorn.run(app, host="0.0.0.0", port=settings.PORT)
+    uvicorn.run(app, host="0.0.0.0")
+
 

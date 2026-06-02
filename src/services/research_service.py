@@ -1,12 +1,15 @@
 import logging
+from datetime import datetime
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
+from prisma import Json
 
 from src.models.research_brief import ResearchBrief
 from src.models.search_params import SearchParams
 from src.utils.config import settings
-from src.repositories.research_session_repository import research_session_repository
+from src.services.database_service import db
+
 logger = logging.getLogger(__name__)
 
 class ResearchService:
@@ -20,42 +23,41 @@ class ResearchService:
         
         # Initialize structured output LLM for search params extraction
         self.params_extractor_llm = self.llm.with_structured_output(SearchParams)
-        self.repo = research_session_repository
 
     async def create_research_query(self, research_brief: ResearchBrief, threadId: str) -> SearchParams:
 
         # Create prompt for extracting search queries
         brief_summary = f"""
-        Product/Service: {research_brief.product_name}
-        Description: {research_brief.product_description}
-        Target Audience: {research_brief.target_audience}
+        Company: {research_brief.company_name}
+        Product/Service: {research_brief.product_description}
+        Target Customers: {research_brief.target_customers}
         Competitors: {', '.join(research_brief.competitor_names) if research_brief.competitor_names else 'None specified'}
-        Campaign Goals: {research_brief.campaign_goals}
-        Preferred Platforms: {', '.join(research_brief.preferred_platforms) if research_brief.preferred_platforms else 'None specified'}
-        Tone and Style: {research_brief.tone_and_style}
-        Additional Notes: {research_brief.additional_notes}
+        Strategic Goals: {research_brief.strategic_goals}
+        Primary Channels: {', '.join(research_brief.primary_channels) if research_brief.primary_channels else 'None specified'}
+        Positioning: {research_brief.positioning_hypothesis}
+        Additional Context: {research_brief.additional_context}
         """
         
         extraction_prompt = f"""
-        Based on the following research brief for an advertising campaign, generate comprehensive search query for google search
-        that will help gather information for research. Create a single query for each category.
+        Based on the following competitive intelligence brief, generate comprehensive search queries for google search
+        that will help gather competitive intelligence. Create a single query for each category.
         
         Guidelines:
-        1. Product Search Query: Generate a single query about the product/service, its features, market positioning, 
-           industry trends, and similar products. Focus on: {research_brief.product_name}
-        2. Competitor Search Query: Generate a single query about competitors, their marketing strategies, pricing, 
-           customer reviews, and market share. Include queries about "{', '.join(research_brief.competitor_names) if research_brief.competitor_names else 'similar products in the market'}"
-        3. Audience Insight Query: Generate a single query about the target audience demographics, interests, 
-           behavior patterns, online presence, and purchasing habits. Focus on: {research_brief.target_audience}
-        4. Campaign Strategy Query: Generate a single query about successful advertising campaigns, best practices, 
-           case studies, and strategies for achieving: {research_brief.campaign_goals}
-        5. Platform-Specific Query: Generate a single query for each preferred platform about best practices, 
-           targeting options, ad formats, and success stories. Platforms: {', '.join(research_brief.preferred_platforms) if research_brief.preferred_platforms else 'general advertising platforms'}
+        1. Company Product Query: Generate a single query to research what {research_brief.company_name}'s product does 
+           and how it's positioned in the market. Focus on features, capabilities, and market positioning.
+        2. Competitor Landscape Query: Generate a single query to research competitor strengths, weaknesses, and recent moves.
+           Include queries about "{', '.join(research_brief.competitor_names) if research_brief.competitor_names else 'key competitors in the market'}"
+        3. Customer Sentiment Query: Generate a single query to research what customers say about this space — 
+           forums, Reddit, reviews, complaints. Focus on: {research_brief.target_customers}
+        4. Strategic Gap Query: Generate a single query to research market gaps, unmet needs, and whitespace 
+           in the competitive landscape for: {research_brief.strategic_goals}
+        5. Battlecard Query: Generate a single query to research how competitors position against each other 
+           on primary channels. Channels: {', '.join(research_brief.primary_channels) if research_brief.primary_channels else 'general market channels'}
         
-        Make sure queries are specific, actionable, and will yield useful research results. Each query should be 
-        distinct and cover different angles of the research topic.
+        Make sure queries are specific, actionable, and will yield useful competitive intelligence results. Each query should be 
+        distinct and cover different angles of the competitive landscape.
         
-        Research Brief:
+        CI Brief:
         {brief_summary}
         """
         
@@ -63,16 +65,20 @@ class ResearchService:
             search_params_results = await self.params_extractor_llm.ainvoke([
                 HumanMessage(content=extraction_prompt)
             ])
-            
-            # Find the active session for this thread
-            active_session = await self.repo.find_by_thread_id(threadId)
-            
+
+            active_session = await db.prisma.researchsession.find_first(
+                where={'threadId': threadId},
+                order={'createdAt': 'desc'}
+            )
             if active_session:
-                await self.repo.update_search_params(
-                    session_id=active_session.id,
-                    search_params=search_params_results.model_dump() if search_params_results else {}
+                await db.prisma.researchsession.update(
+                    where={'id': active_session.id},
+                    data={
+                        'searchParams': Json(search_params_results.model_dump() if search_params_results else {}),
+                        'updatedAt': datetime.utcnow(),
+                    }
                 )
-            
+
             return search_params_results
         except Exception as e:
             logger.error(f"Error generating search params: {e}")

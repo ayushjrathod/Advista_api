@@ -1,5 +1,6 @@
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
+from firebase_admin._auth_utils import UserNotFoundError
 from src.utils.config import settings
 import logging
 
@@ -8,14 +9,11 @@ logger = logging.getLogger(__name__)
 class FirebaseService:
     def __init__(self):
         self._initialized = False
-    
+
     def _ensure_initialized(self):
-        """Initialize Firebase Admin SDK if not already initialized"""
         if not self._initialized:
             try:
-                # Check if Firebase is already initialized
                 if not firebase_admin._apps:
-                    # Create credentials from environment variables
                     cred = credentials.Certificate({
                         "type": "service_account",
                         "project_id": settings.FIREBASE_PROJECT_ID,
@@ -29,96 +27,32 @@ class FirebaseService:
                         "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{settings.FIREBASE_CLIENT_EMAIL.replace('@', '%40')}",
                         "universe_domain": "googleapis.com"
                     })
-                    logger.info("Using Firebase credentials from environment variables")
-                    
                     firebase_admin.initialize_app(cred)
-                    logger.info("Firebase Admin SDK initialized successfully")
-                else:
-                    logger.info("Firebase Admin SDK already initialized")
+                    logger.info("Firebase Admin SDK initialized")
                 self._initialized = True
             except Exception as e:
                 logger.error(f"Failed to initialize Firebase: {str(e)}")
                 raise e
-    
-    def create_user(self, email: str, password: str) -> dict:
-        """Create a new user in Firebase Authentication"""
+
+    def verify_id_token(self, token: str) -> dict:
+        """Verify a Firebase ID token and return its claims."""
         try:
             self._ensure_initialized()
-            user = firebase_auth.create_user(
-                email=email,
-                password=password,
-                email_verified=False
-            )
-            return {
-                "uid": user.uid,
-                "email": user.email,
-                "email_verified": user.email_verified
-            }
+            return firebase_auth.verify_id_token(token)
         except Exception as e:
-            logger.error(f"Failed to create Firebase user: {str(e)}")
+            logger.error(f"Failed to verify Firebase ID token: {str(e)}")
             raise e
-    
-    def verify_user_email(self, uid: str) -> bool:
-        """Mark user email as verified in Firebase"""
+
+    def get_user_by_email(self, email: str):
+        """Get a Firebase user by email if it exists."""
         try:
             self._ensure_initialized()
-            firebase_auth.update_user(uid, email_verified=True)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to verify user email: {str(e)}")
-            return False
-    
-    def authenticate_user(self, email: str, password: str) -> dict:
-        """Authenticate user with Firebase"""
-        try:
-            self._ensure_initialized()
-            # This would typically involve Firebase Auth REST API
-            # For now, we'll use a simplified approach
-            user = firebase_auth.get_user_by_email(email)
-            if user.email_verified:
-                return {
-                    "uid": user.uid,
-                    "email": user.email,
-                    "email_verified": user.email_verified
-                }
+            return firebase_auth.get_user_by_email(email)
+        except UserNotFoundError:
             return None
         except Exception as e:
-            logger.error(f"Failed to authenticate user: {str(e)}")
-            return None
-    
-    def send_password_reset_email(self, email: str) -> bool:
-        """Send password reset email using Firebase"""
-        try:
-            self._ensure_initialized()
-            # Generate password reset link
-            reset_link = firebase_auth.generate_password_reset_link(email)
-            # Note: In a real implementation, you would send this link via email
-            # For now, we'll just log it (in production, integrate with your email service)
-            logger.info(f"Password reset link for {email}: {reset_link}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to send password reset email: {str(e)}")
-            return False
-    
-    def update_user_password(self, uid: str, new_password: str) -> bool:
-        """Update user password in Firebase"""
-        try:
-            self._ensure_initialized()
-            firebase_auth.update_user(uid, password=new_password)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update user password: {str(e)}")
-            return False
-    
-    def delete_user(self, uid: str) -> bool:
-        """Delete user from Firebase"""
-        try:
-            self._ensure_initialized()
-            firebase_auth.delete_user(uid)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete user: {str(e)}")
-            return False
+            logger.error(f"Failed to fetch Firebase user by email: {str(e)}")
+            raise e
 
 # Global instance
 firebase_service = FirebaseService()
