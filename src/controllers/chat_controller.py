@@ -19,7 +19,7 @@ class ChatStreamRequest(BaseModel):
 class StartResearchRequest(BaseModel):
     research_brief: ResearchBrief
 
-
+# check if the thread_id belongs to the current user (if logged in) or is public
 async def _require_thread_owner(thread_id: str, current_user):
     session = await db.prisma.chatsession.find_unique(where={"threadId": thread_id})
     if not session:
@@ -28,7 +28,7 @@ async def _require_thread_owner(thread_id: str, current_user):
         raise HTTPException(status_code=403, detail="You do not have access to this thread")
     return session
 
-
+# Stream chat messages - SSE
 @chat_router.post("/stream")
 async def chat_stream(request: ChatStreamRequest, current_user = Depends(get_optional_user)):
     await _require_thread_owner(request.thread_id, current_user)
@@ -39,7 +39,7 @@ async def chat_stream(request: ChatStreamRequest, current_user = Depends(get_opt
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-
+# get research brief for a thread_id
 @chat_router.get("/research-brief/{thread_id}")
 async def get_research_brief(thread_id: str, current_user = Depends(get_optional_user)):
     """Get the current research brief for a thread"""
@@ -52,6 +52,7 @@ async def get_research_brief(thread_id: str, current_user = Depends(get_optional
         "is_complete": brief.is_complete()
     }
 
+# Initialize a new thread and return the thread_id. If user is logged in, associate the thread with the user_id, otherwise create an anonymous thread.
 @chat_router.post("/initialize-thread")
 @chat_router.get("/initialize-thread")
 async def initialize_thread(current_user = Depends(get_optional_user)):

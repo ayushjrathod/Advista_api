@@ -1,26 +1,35 @@
 from prisma import Prisma
+import asyncio
 from src.utils.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# TODO: implement retries maybe exponential backoff
 class DatabaseService:
     def __init__(self):
         # Create client instance but do NOT connect automatically
         self.prisma = Prisma(datasource={'url': settings.DATABASE_URL})
         self._connected = False
 
-    async def connect(self):
-        if not self._connected:
+    async def connect(self, max_retries: int = 5, base_delay: float = 1.0):
+        if self._connected:
+            logger.info("Already connected to database")
+            return
+        for attempt in range(max_retries):
             try:
                 await self.prisma.connect()
                 self._connected = True
                 logger.info("Connected to database")
+                return
             except Exception as e:
-                logger.error(f"Error connecting to database: {e}")
-                raise
+                if attempt == max_retries - 1:
+                    logger.error(f"Failed to connect to database after {max_retries} attempts: {e}")
+                    raise
+                # Exponential backoff
+                delay = base_delay * (2 ** attempt)
+                logger.warning(f"Database connection failed (attempt {attempt + 1}/{max_retries}), retrying in {delay:.2f} seconds...")
+                await asyncio.sleep(delay)
 
     async def disconnect(self):
         if self._connected:
