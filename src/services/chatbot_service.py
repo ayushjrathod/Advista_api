@@ -3,6 +3,7 @@ import datetime
 from typing import Dict, Any, cast
 from src.utils.config import settings
 from src.models.research_brief import ResearchBrief
+from src.prompts.chatbot import CHATBOT_SYSTEM_PROMPT, CHATBOT_EXTRACTION_PROMPT
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.chat_models import init_chat_model
@@ -25,57 +26,9 @@ class ChatbotService:
         # Thread-specific research briefs storage
         # thread_id: research_brief
         self.research_briefs: Dict[str, ResearchBrief] = {}
-        
-        # Thread-specific conversation history cache (fallback when memory fails)
-        # thread_id: list of (role, content) tuples
-        self.conversation_history: Dict[str, list[tuple[str, str]]] = {}
 
         # System behavior prompt
-        self.system_message = SystemMessage(
-            content=(
-                                """You are a Competitive Intelligence Research Assistant.
-
-                                Your goal is to collect a complete CI brief through a NATURAL, FREE-FLOWING conversation.
-                                You are not a rigid form bot.
-
-                                CONVERSATION STYLE:
-                                - Be conversational, sharp, and consultant-like.
-                                - Let users describe their market in their own words.
-                                - Acknowledge useful details and ask smart follow-ups.
-                                - Keep responses concise (usually 2-5 sentences).
-
-                                FLEXIBLE QUESTIONING RULES:
-                                - Prefer one focused question at a time, but you may ask up to two related questions when helpful.
-                                - Do NOT force a strict fixed order if the user naturally provides information out of order.
-                                - If the user shares multiple details at once, absorb them and move to the biggest missing gap.
-
-                                CRITICAL RULE: NEVER end a response with just a statement. ALWAYS end with a question that drives the
-                                conversation forward.
-
-                                CRITICAL FIELDS TO COLLECT (any order):
-                                1. company_name — the user's own company
-                                2. product_description — what their product/service does
-                                3. target_customers — who they sell to (ICP)
-                                4. competitor_names — key competitors in their space
-                                5. strategic_goals — what CI outcome they need (e.g., find gaps, track threats, prepare battlecards)
-                                6. primary_channels — where they compete (e.g., LinkedIn, G2, industry forums, YouTube)
-                                7. positioning_hypothesis — how they currently differentiate (or how they want to)
-                                8. additional_context — any known competitor moves, recent events, or specific focus areas
-
-                                COMPLETION RULE:
-                                Minimum required: company_name, product_description, target_customers, competitor_names,
-                                strategic_goals, primary_channels.
-                                Once minimum met, optionally gather positioning_hypothesis and additional_context.
-                                Then conclude with: "Perfect! I have enough to generate your competitive intelligence report. You can
-                                add more context or click 'Generate CI Report' when ready."
-
-                                IMPORTANT BEHAVIOR:
-                                - Never ask endless questions.
-                                - Do not produce the analysis yourself — only collect brief inputs.
-                                - Avoid repeating already captured information.
-                                """
-            )
-        )
+        self.system_message = SystemMessage(content=CHATBOT_SYSTEM_PROMPT)
 
     def _ensure_runtime_initialized(self) -> None:
         if self.app is not None and self.llm is not None and self.extractor_llm is not None and self.memory is not None:
@@ -147,21 +100,7 @@ class ChatbotService:
             logger.warning(f"Extraction skipped for {thread_id}: empty history")
             return self.get_research_brief_for_thread(thread_id) # Return existing brief
 
-        extraction_prompt = (
-            f"Extract any competitive intelligence brief information from this conversation. "
-            f"Extract information from BOTH user responses AND bot suggestions/statements. "
-            f"If the bot recommended specific channels, competitors, or other information, extract those as well. "
-            f"Only fill in fields where information is explicitly provided (either by user or bot). "
-            f"Leave fields empty if no information is given.\n\n"
-            f"Fields to extract: company_name, product_description, target_customers, competitor_names, "
-            f"strategic_goals, primary_channels, positioning_hypothesis, additional_context.\n\n"
-            f"CRITICAL: competitor_names and primary_channels MUST be arrays (lists). "
-            f"If multiple values are mentioned, put them in an array. "
-            f"If only one value is mentioned, put it in an array with one element. "
-            f"If no values are mentioned, use an empty array []. "
-            f"NEVER use strings for these fields.\n\n"
-            f"Conversation:\n{conversation_history}"
-        )
+        extraction_prompt = CHATBOT_EXTRACTION_PROMPT.format(conversation_history=conversation_history)
 
         try:
             self._ensure_runtime_initialized()
@@ -263,17 +202,7 @@ class ChatbotService:
 
         # 4. After streaming, extract from the *full history*
         try:
-            # First, add current exchange to our conversation history cache
-            if thread_id not in self.conversation_history:
-                self.conversation_history[thread_id] = []
-            
-            # Add user message
-            self.conversation_history[thread_id].append(("human", user_message))
-            # Add AI response
-            if full_response:
-                self.conversation_history[thread_id].append(("ai", full_response))
-            
-            # Try to get conversation from LangGraph memory first (more complete)
+            # Get conversation from LangGraph memory
             memory_state = self.memory.get(config)
             all_messages: list[BaseMessage] = []
             if memory_state and isinstance(memory_state, dict):
@@ -286,12 +215,8 @@ class ChatbotService:
 
             conversation_str = "\n".join(conversation_parts)
 
-            # Fallback: if memory did not capture messages, use our accumulated cache
             if not conversation_str.strip():
-                logger.warning(f"Memory missing or had no human/ai messages for {thread_id}. Using accumulated conversation history.")
-                # Build conversation string from our cache
-                conversation_parts = [f"{role}: {content}" for role, content in self.conversation_history[thread_id]]
-                conversation_str = "\n".join(conversation_parts)
+                logger.warning(f"Memory missing or had no human/ai messages for {thread_id}.")
 
             # 5. Extract from the full conversation string
             extracted_brief = await self.extract_information(thread_id, conversation_str)

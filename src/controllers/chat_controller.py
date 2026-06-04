@@ -54,7 +54,6 @@ async def get_research_brief(thread_id: str, current_user = Depends(get_optional
 
 # Initialize a new thread and return the thread_id. If user is logged in, associate the thread with the user_id, otherwise create an anonymous thread.
 @chat_router.post("/initialize-thread")
-@chat_router.get("/initialize-thread")
 async def initialize_thread(current_user = Depends(get_optional_user)):
     user_id = current_user.id if current_user else None
     thread_id = await chatbot_service.create_thread(user_id)
