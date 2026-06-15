@@ -43,7 +43,7 @@ if settings.ENVIRONMENT == "development":
 
 if settings.ENVIRONMENT == "production":
     allowed_origins.extend([
-        "https://advista.ayushjrathod.live",
+        "https://advista.ayushjrathod.dev",
         "https://advista-prod.vercel.app",
     ])
 
