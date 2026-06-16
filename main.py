@@ -30,22 +30,14 @@ app = FastAPI(
 )
 
 # CORS configuration
-allowed_origins = []
-
-# Add development origins
-if settings.ENVIRONMENT == "development":
-    allowed_origins.extend([
-        "http://localhost:3000",
-        "http://localhost:5173",  # Vite default port
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ])
-
-if settings.ENVIRONMENT == "production":
-    allowed_origins.extend([
-        "https://advista.ayushjrathod.dev",
-        "https://advista-prod.vercel.app",
-    ])
+allowed_origins = [
+    "https://advista.ayushjrathod.dev",
+    "https://advista-prod.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
 
 app.add_middleware(
     CORSMiddleware,
